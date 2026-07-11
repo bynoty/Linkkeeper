@@ -45,6 +45,7 @@ interface SettingsPanelProps {
   onGoogleLogout?: () => Promise<void>;
   onSetupGoogleSheet?: (token?: string) => Promise<void>;
   onGoogleSheetsSync?: (token: string, spreadsheetId: string, currentSettings: AppSettings) => Promise<void>;
+  vaultItems: VaultItem[];
 }
 
 export default function SettingsPanel({
@@ -62,6 +63,7 @@ export default function SettingsPanel({
   onGoogleLogout,
   onSetupGoogleSheet,
   onGoogleSheetsSync,
+  vaultItems,
 }: SettingsPanelProps) {
   // Sync form state
   const [webAppUrl, setWebAppUrl] = useState(settings.webAppUrl || '');
@@ -86,6 +88,11 @@ export default function SettingsPanel({
   const [importConfirmMasterPassword, setImportConfirmMasterPassword] = useState('');
   const [isProcessingImport, setIsProcessingImport] = useState(false);
 
+  // Google Passwords CSV Export State
+  const [showCsvExportModal, setShowCsvExportModal] = useState(false);
+  const [exportMasterPassword, setExportMasterPassword] = useState('');
+  const [isProcessingExport, setIsProcessingExport] = useState(false);
+
   // Esc keyboard shortcut to close active modals
   React.useEffect(() => {
     const handleSettingsEsc = (e: KeyboardEvent) => {
@@ -97,11 +104,15 @@ export default function SettingsPanel({
           setShowCsvImportModal(false);
           setCsvImportRows([]);
         }
+        if (showCsvExportModal) {
+          setShowCsvExportModal(false);
+          setExportMasterPassword('');
+        }
       }
     };
     window.addEventListener('keydown', handleSettingsEsc);
     return () => window.removeEventListener('keydown', handleSettingsEsc);
-  }, [showClearCacheConfirm, showCsvImportModal]);
+  }, [showClearCacheConfirm, showCsvImportModal, showCsvExportModal]);
 
   // Handle Sheet Sync form save
   const handleSaveSyncSettings = async (e: React.FormEvent) => {
@@ -305,6 +316,106 @@ export default function SettingsPanel({
     onShowToast('Sample CSV template downloaded successfully', 'success');
   };
 
+  // Export Vault items to Google/Bitwarden compatible CSV format
+  const decryptPasswordHelper = (encryptedText: string, key: string): string => {
+    if (!encryptedText) return '';
+    try {
+      const bytes = CryptoJS.AES.decrypt(encryptedText, key);
+      const originalText = bytes.toString(CryptoJS.enc.Utf8);
+      if (!originalText) return '[Decryption Error]';
+      return originalText;
+    } catch (err) {
+      return '[Decryption Error]';
+    }
+  };
+
+  const exportVaultCsv = (verificationKey: string | null) => {
+    setIsProcessingExport(true);
+    try {
+      // Prepare CSV content with UTF-8 BOM for Excel/spreadsheets compatibility
+      let csvContent = '\uFEFFname,url,username,password,note\n';
+
+      const escapeCsvValue = (val: string) => {
+        if (!val) return '';
+        const escaped = val.replace(/"/g, '""');
+        return `"${escaped}"`;
+      };
+
+      vaultItems.forEach(item => {
+        const decryptedPass = verificationKey
+          ? decryptPasswordHelper(item.Password, verificationKey)
+          : item.Password;
+
+        const service = item.Service || '';
+        const looksLikeUrl = service.includes('.') || service.startsWith('http://') || service.startsWith('https://');
+        const url = looksLikeUrl ? (service.startsWith('http') ? service : `https://${service}`) : '';
+
+        const nameValue = escapeCsvValue(service);
+        const urlValue = escapeCsvValue(url);
+        const usernameValue = escapeCsvValue(item.Username || '');
+        const passwordValue = escapeCsvValue(decryptedPass);
+        const noteValue = escapeCsvValue(item.Note || '');
+
+        csvContent += `${nameValue},${urlValue},${usernameValue},${passwordValue},${noteValue}\n`;
+      });
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", downloadUrl);
+      link.setAttribute("download", `linkkeeper_vault_export_${new Date().toISOString().split('T')[0]}.csv`);
+      link.style.visibility = 'hidden';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setShowCsvExportModal(false);
+      onShowToast(`Successfully exported ${vaultItems.length} passwords to CSV!`, 'success');
+    } catch (err) {
+      onShowToast(`Export failed: ${(err as Error).message}`, 'error');
+    } finally {
+      setIsProcessingExport(false);
+    }
+  };
+
+  const handleExportVaultCsvClick = () => {
+    if (!vaultItems || vaultItems.length === 0) {
+      onShowToast('No passwords found in the vault to export.', 'warning');
+      return;
+    }
+
+    if (settings.masterPasswordHash) {
+      setExportMasterPassword('');
+      setShowCsvExportModal(true);
+    } else {
+      exportVaultCsv(null);
+    }
+  };
+
+  const handleCsvExportSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (isProcessingExport) return;
+
+    if (!exportMasterPassword) {
+      onShowToast('Please enter your Master Password', 'warning');
+      return;
+    }
+
+    try {
+      const bytes = CryptoJS.AES.decrypt(settings.masterPasswordHash!, exportMasterPassword);
+      const decryptedText = bytes.toString(CryptoJS.enc.Utf8);
+      if (decryptedText !== 'link-keeper-verify') {
+        onShowToast('Incorrect Master Password. Please try again.', 'error');
+        return;
+      }
+    } catch (err) {
+      onShowToast('Verification failed. Invalid Master Password.', 'error');
+      return;
+    }
+
+    exportVaultCsv(exportMasterPassword);
+  };
+
   // Copy Snippet Helper
   const handleCopyText = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -402,6 +513,15 @@ export default function SettingsPanel({
                   className="hidden"
                 />
               </label>
+
+              {/* Export Vault to CSV */}
+              <button
+                type="button"
+                onClick={handleExportVaultCsvClick}
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5" /> Export Vault to CSV (Google/Bitwarden)
+              </button>
 
               {/* Download Sample CSV Template */}
               <button
@@ -856,6 +976,77 @@ export default function SettingsPanel({
                     </>
                   ) : (
                     'Encrypt & Import'
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Passwords CSV Export Modal */}
+      {showCsvExportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-in fade-in duration-100">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 w-full max-w-md shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <form onSubmit={handleCsvExportSubmit} className="p-6 space-y-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-emerald-100 dark:bg-emerald-950/40 rounded-full flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <Download className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-semibold text-zinc-900 dark:text-white text-base">
+                    Passwords CSV Export
+                  </h3>
+                  <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                    Export {vaultItems.length} credentials in Google / Bitwarden format.
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <p className="text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                  Please enter your <strong>Vault Master Password</strong> to decrypt your secure credentials for export.
+                </p>
+                <div className="space-y-1.5">
+                  <label className="text-[11px] font-semibold text-zinc-400 dark:text-zinc-500 uppercase tracking-wider flex items-center gap-1">
+                    <Lock className="w-3 h-3" /> Master Password
+                  </label>
+                  <input
+                    type="password"
+                    placeholder="Enter Master Password"
+                    value={exportMasterPassword}
+                    onChange={(e) => setExportMasterPassword(e.target.value)}
+                    className="w-full px-3.5 py-2.5 text-xs rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 dark:text-white"
+                    disabled={isProcessingExport}
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowCsvExportModal(false);
+                    setExportMasterPassword('');
+                  }}
+                  className="flex-1 px-4 py-2.5 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer transition-colors"
+                  disabled={isProcessingExport}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 px-4 py-2.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl cursor-pointer transition-colors shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-50"
+                  disabled={isProcessingExport}
+                >
+                  {isProcessingExport ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-white/35 border-t-white rounded-full animate-spin" />
+                      Exporting...
+                    </>
+                  ) : (
+                    'Decrypt & Export'
                   )}
                 </button>
               </div>

@@ -782,6 +782,7 @@ export default function App() {
               onGoogleLogout={handleGoogleLogout}
               onSetupGoogleSheet={handleSetupGoogleSheet}
               onGoogleSheetsSync={handleGoogleSheetsSync}
+              vaultItems={vaultItems}
             />
           )}
         </main>

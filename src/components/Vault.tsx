@@ -21,7 +21,8 @@ import {
   Search,
   Check,
   X,
-  RefreshCw
+  RefreshCw,
+  ExternalLink
 } from 'lucide-react';
 
 interface VaultProps {
@@ -32,6 +33,48 @@ interface VaultProps {
   masterPasswordHash?: string;
   onSetMasterPasswordHash: (hash: string) => void;
   searchTerm: string;
+}
+
+// Helper to parse URL and Notes from a Vault item
+function parseVaultItemUrlAndNote(item: VaultItem) {
+  let extractedUrl = '';
+  let cleanNote = item.Note || '';
+
+  // 1. Try to extract from Note
+  if (item.Note) {
+    const lines = item.Note.split('\n');
+    const urlLineIndex = lines.findIndex(line => line.trim().toUpperCase().startsWith('URL:'));
+    if (urlLineIndex !== -1) {
+      const line = lines[urlLineIndex];
+      // Extract URL part: "URL: http://..." -> "http://..."
+      extractedUrl = line.substring(line.indexOf(':') + 1).trim();
+      
+      // Remove this line from the clean note
+      const remainingLines = lines.filter((_, idx) => idx !== urlLineIndex);
+      cleanNote = remainingLines.join('\n').trim();
+    } else {
+      // Maybe there is no "URL:" prefix but the note itself is just a URL
+      const trimmedNote = item.Note.trim();
+      const isOnlyUrl = trimmedNote.startsWith('http://') || trimmedNote.startsWith('https://');
+      if (isOnlyUrl) {
+        extractedUrl = trimmedNote;
+        cleanNote = '';
+      }
+    }
+  }
+
+  // 2. If no URL in Note, check if Service looks like a URL/IP address
+  if (!extractedUrl && item.Service) {
+    const service = item.Service.trim();
+    const hasDot = service.includes('.');
+    const hasHttp = service.startsWith('http://') || service.startsWith('https://');
+    const hasLocalhost = service.startsWith('localhost') || service.includes('127.0.0.1');
+    if (hasDot || hasHttp || hasLocalhost) {
+      extractedUrl = hasHttp ? service : `https://${service}`;
+    }
+  }
+
+  return { url: extractedUrl, note: cleanNote };
 }
 
 export default function Vault({
@@ -534,6 +577,7 @@ export default function Vault({
           {filteredVaultItems.map(item => {
             const isPasswordVisible = !!visiblePasswords[item.ID];
             const plainPassword = decryptPassword(item.Password);
+            const { url, note } = parseVaultItemUrlAndNote(item);
 
             return (
               <div 
@@ -615,12 +659,42 @@ export default function Vault({
                       </div>
                     </div>
 
+                    {/* Website / URL */}
+                    {url && (
+                      <div className="flex items-center justify-between gap-2 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-1.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30 animate-in fade-in duration-100">
+                        <div className="truncate text-left min-w-0 flex-1">
+                          <span className="block text-[10px] font-medium text-zinc-400 uppercase">Website / URL</span>
+                          <span className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400 truncate block">
+                            {url}
+                          </span>
+                        </div>
+                        <div className="flex gap-1 shrink-0">
+                          <button
+                            onClick={() => handleCopy(url, 'URL')}
+                            className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer"
+                            title="Copy URL"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer flex items-center justify-center"
+                            title="Visit Website"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        </div>
+                      </div>
+                    )}
+
                   </div>
 
                   {/* Note if exists */}
-                  {item.Note && (
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 italic bg-zinc-50 dark:bg-zinc-800/20 p-2 rounded-xl">
-                      {item.Note}
+                  {note && (
+                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 italic bg-zinc-50 dark:bg-zinc-800/20 p-2 rounded-xl break-words text-left">
+                      {note}
                     </p>
                   )}
                 </div>
