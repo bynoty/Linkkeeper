@@ -614,7 +614,11 @@ export default function App() {
           {/* Action Tools */}
           <div className="flex items-center gap-2 md:gap-3 shrink-0">
             {/* Sync Database Status Badge */}
-            <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200/50 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
+            <button
+              onClick={() => startTransition(() => setActiveTab('settings'))}
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200/50 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 hover:bg-zinc-150 dark:hover:bg-zinc-800/60 hover:text-zinc-700 dark:hover:text-zinc-200 transition-all cursor-pointer text-left"
+              title="Click to configure Sync and Google settings"
+            >
               {settings.googleSyncEnabled && user ? (
                 <>
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
@@ -627,11 +631,11 @@ export default function App() {
                 </>
               ) : (
                 <>
-                  <CloudOff className="w-3.5 h-3.5 text-zinc-400" />
-                  <span>Local Storage Only</span>
+                  <CloudOff className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
+                  <span>Offline (Local Storage) - Click to Sync with Google</span>
                 </>
               )}
-            </div>
+            </button>
 
             {/* Manual Sync Trigger */}
             {(((settings.googleSyncEnabled && user && googleToken && settings.googleSpreadsheetId)) || settings.webAppUrl) && (

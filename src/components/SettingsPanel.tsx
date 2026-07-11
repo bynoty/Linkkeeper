@@ -77,6 +77,9 @@ export default function SettingsPanel({
   // Setup Guide Toggle
   const [showSetupGuide, setShowSetupGuide] = useState(false);
 
+  // Domain Troubleshoot Toggle
+  const [showDomainTroubleshoot, setShowDomainTroubleshoot] = useState(false);
+
   // Clear cache custom confirm modal state
   const [showClearCacheConfirm, setShowClearCacheConfirm] = useState(false);
 
@@ -571,26 +574,80 @@ export default function SettingsPanel({
             </p>
 
             {!googleUser ? (
-              <div className="flex flex-col items-center justify-center p-6 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/40 gap-3">
-                <Cloud className="w-8 h-8 text-zinc-300 dark:text-zinc-700 animate-pulse" />
-                <div className="text-center">
-                  <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Google Sheets Sync is disconnected</p>
-                  <p className="text-[10px] text-zinc-400 mt-1">Sign in with your Google Account to authorize direct synchronization</p>
+              <div className="space-y-4 w-full">
+                <div className="flex flex-col items-center justify-center p-6 border border-dashed border-zinc-200 dark:border-zinc-800 rounded-2xl bg-zinc-50/50 dark:bg-zinc-900/40 gap-3">
+                  <Cloud className="w-8 h-8 text-zinc-300 dark:text-zinc-700 animate-pulse" />
+                  <div className="text-center">
+                    <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">Google Sheets Sync is disconnected</p>
+                    <p className="text-[10px] text-zinc-400 mt-1">Sign in with your Google Account to authorize direct synchronization</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onGoogleSignIn}
+                    className="mt-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
+                  >
+                    {/* Google SVG Icon */}
+                    <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                    </svg>
+                    Connect Google Sheets
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={onGoogleSignIn}
-                  className="mt-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold rounded-xl shadow-xs transition-all flex items-center gap-2 cursor-pointer"
-                >
-                  {/* Google SVG Icon */}
-                  <svg className="w-4 h-4 fill-current" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                    <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                    <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
-                    <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
-                  </svg>
-                  Connect Google Sheets
-                </button>
+
+                {/* Vercel Domain Authorization Troubleshooting Helper */}
+                <div className="border border-zinc-200/60 dark:border-zinc-800 rounded-2xl bg-zinc-50/30 dark:bg-zinc-900/20 p-4 space-y-3">
+                  <button
+                    type="button"
+                    onClick={() => setShowDomainTroubleshoot(!showDomainTroubleshoot)}
+                    className="w-full flex items-center justify-between text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors cursor-pointer text-left"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-500 animate-pulse" />
+                      ล็อกอินไม่ได้ (Error: auth/unauthorized-domain)? คลิกดูวิธีแก้ไข
+                    </span>
+                    <span className="text-xs">{showDomainTroubleshoot ? '▲ ซ่อน' : '▼ แสดง'}</span>
+                  </button>
+
+                  {showDomainTroubleshoot && (
+                    <div className="space-y-3 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed border-t border-zinc-150 dark:border-zinc-800/80 pt-3 animate-in fade-in duration-200">
+                      <p>
+                        หากคุณพบ Error แจ้งเตือนเกี่ยวกับ <code className="bg-red-50 dark:bg-red-950/40 text-red-600 dark:text-red-400 px-1 py-0.5 rounded font-mono">auth/unauthorized-domain</code> เมื่อกดปุ่ม Connect บนโดเมน Vercel ของคุณ (<code className="font-mono text-zinc-800 dark:text-zinc-200">linkkeeper-theta.vercel.app</code>) นั่นแปลว่า Firebase ของแอปยังไม่ได้รับอนุญาตโดเมนนี้ครับ
+                      </p>
+                      
+                      <div className="space-y-2 bg-white dark:bg-zinc-900/50 p-3 rounded-xl border border-zinc-150 dark:border-zinc-800/60">
+                        <p className="font-semibold text-zinc-800 dark:text-zinc-200 flex items-center gap-1">
+                          🛠️ วิธีแก้ไขง่ายๆ ใน 3 ขั้นตอน:
+                        </p>
+                        <ol className="list-decimal list-inside space-y-1.5 pl-1">
+                          <li>
+                            เปิดหน้าจัดการตั้งค่า Firebase ของคุณโดยตรงที่นี่:<br />
+                            <a 
+                              href="https://console.firebase.google.com/project/project-72a1fdb5-e3ac-46e1-a5d/authentication/settings" 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1 text-emerald-600 hover:text-emerald-500 dark:text-emerald-400 font-bold underline break-all"
+                            >
+                              Firebase Console Settings <ExternalLink className="w-3 h-3 inline" />
+                            </a>
+                          </li>
+                          <li>
+                            เลื่อนลงมาที่หัวข้อ <strong>"Authorized domains" (โดเมนที่ได้รับอนุญาต)</strong> แล้วคลิกปุ่ม <strong>"Add domain"</strong>
+                          </li>
+                          <li>
+                            ระบุชื่อโดเมน Vercel ของคุณ: <code className="bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded font-mono text-emerald-600 dark:text-emerald-400 select-all">linkkeeper-theta.vercel.app</code> จากนั้นกด <strong>Add</strong>
+                          </li>
+                        </ol>
+                      </div>
+
+                      <p className="text-[11px] text-zinc-500 italic">
+                        * เมื่อตั้งค่าเสร็จแล้ว ให้ลองรีเฟรชหน้าเว็บนี้อีกครั้งและกดปุ่มด้านบนเพื่อล็อกอินและเริ่มการซิงค์ข้อมูลลง Spreadsheet ส่วนตัวของคุณได้ทันที!
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="p-4 border border-zinc-200 dark:border-zinc-800 rounded-2xl bg-emerald-500/5 dark:bg-emerald-500/5 space-y-4">
