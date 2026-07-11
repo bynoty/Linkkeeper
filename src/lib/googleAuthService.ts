@@ -13,6 +13,14 @@ provider.addScope('https://www.googleapis.com/auth/drive.file');
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
+const GOOGLE_TOKEN_KEY = 'link_keeper_google_token';
+
+// Try to recover token from localStorage
+try {
+  cachedAccessToken = localStorage.getItem(GOOGLE_TOKEN_KEY);
+} catch (e) {
+  console.error('Failed to read Google token from localStorage:', e);
+}
 
 /**
  * Initialize auth state listener.
@@ -49,6 +57,11 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     }
 
     cachedAccessToken = credential.accessToken;
+    try {
+      localStorage.setItem(GOOGLE_TOKEN_KEY, cachedAccessToken);
+    } catch (e) {
+      console.error('Failed to save Google token to localStorage:', e);
+    }
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error) {
     console.error('Sign in error:', error);
@@ -71,4 +84,9 @@ export const getAccessToken = async (): Promise<string | null> => {
 export const logout = async () => {
   await auth.signOut();
   cachedAccessToken = null;
+  try {
+    localStorage.removeItem(GOOGLE_TOKEN_KEY);
+  } catch (e) {
+    console.error('Failed to remove Google token from localStorage:', e);
+  }
 };

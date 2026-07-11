@@ -33,6 +33,8 @@ interface VaultProps {
   masterPasswordHash?: string;
   onSetMasterPasswordHash: (hash: string) => void;
   searchTerm: string;
+  autoLockEnabled?: boolean;
+  autoLockTimeout?: number;
 }
 
 // Helper to parse URL and Notes from a Vault item
@@ -85,6 +87,8 @@ export default function Vault({
   masterPasswordHash,
   onSetMasterPasswordHash,
   searchTerm,
+  autoLockEnabled = false,
+  autoLockTimeout = 15,
 }: VaultProps) {
   // Master Password State
   const [typedMasterPassword, setTypedMasterPassword] = useState('');
@@ -112,19 +116,21 @@ export default function Vault({
 
   // Inactivity tracking
   const inactivityTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const AUTO_LOCK_MS = 5 * 60 * 1000; // 5 minutes
   const [secondsToLock, setSecondsToLock] = useState(300);
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Reset inactivity timer on user activity inside the vault
   const resetInactivityTimer = () => {
-    if (!isUnlocked || !decryptionKey) return;
-    
     // Clear existing timer
     if (inactivityTimerRef.current) clearTimeout(inactivityTimerRef.current);
     if (countdownIntervalRef.current) clearInterval(countdownIntervalRef.current);
 
-    setSecondsToLock(300);
+    if (!isUnlocked || !decryptionKey || !autoLockEnabled) return;
+
+    const timeoutSeconds = (autoLockTimeout || 15) * 60;
+    const AUTO_LOCK_MS = timeoutSeconds * 1000;
+
+    setSecondsToLock(timeoutSeconds);
 
     // Set new auto-lock timer
     inactivityTimerRef.current = setTimeout(() => {
@@ -176,7 +182,7 @@ export default function Vault({
         });
       };
     }
-  }, [isUnlocked, decryptionKey]);
+  }, [isUnlocked, decryptionKey, autoLockEnabled, autoLockTimeout]);
 
   // Esc keyboard shortcut to close active modals
   useEffect(() => {
@@ -520,10 +526,16 @@ export default function Vault({
 
         <div className="flex items-center gap-3 w-full sm:w-auto justify-between sm:justify-end">
           {/* Inactivity tracker clock */}
-          <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/15 rounded-lg text-xs font-medium">
-            <RefreshCw className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} />
-            <span>Locking in {formatTimeRemaining(secondsToLock)}</span>
-          </div>
+          {autoLockEnabled ? (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/15 rounded-lg text-xs font-medium">
+              <RefreshCw className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} />
+              <span>Locking in {formatTimeRemaining(secondsToLock)}</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 px-3 py-1.5 bg-white/10 rounded-lg text-xs font-medium text-emerald-100">
+              <span>Auto-Lock: Off</span>
+            </div>
+          )}
 
           <button
             onClick={handleLock}

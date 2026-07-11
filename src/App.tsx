@@ -32,6 +32,7 @@ import {
   importBackup, 
   clearLocalCache,
   addVaultToSheets,
+  parseNetscapeBookmarks,
   DEFAULT_SETTINGS
 } from './lib/api';
 import { LinkItem, VaultItem, AppSettings, ActiveTab, ToastMessage } from './types';
@@ -54,7 +55,8 @@ import {
   CloudOff, 
   CloudLightning,
   LogOut,
-  Sparkles
+  Sparkles,
+  User as UserIcon
 } from 'lucide-react';
 
 export default function App() {
@@ -415,6 +417,62 @@ export default function App() {
     }
   };
 
+  const handleBulkDeleteLinks = async (ids: string[]) => {
+    setIsLoading(true);
+    try {
+      showToast(`Deleting ${ids.length} links...`, 'info');
+      for (const id of ids) {
+        await deleteLink(settings, id);
+      }
+      
+      let nextLinks: LinkItem[] = [];
+      setLinks(prev => {
+        const list = prev.filter(l => !ids.includes(l.ID));
+        nextLinks = list;
+        return list;
+      });
+
+      if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
+        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+      }
+      showToast(`Successfully deleted ${ids.length} links`, 'success');
+    } catch (err) {
+      showToast(`Bulk delete failed: ${(err as Error).message}`, 'error');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleBulkMoveLinks = async (ids: string[], newCategory: string) => {
+    setIsLoading(true);
+    try {
+      showToast(`Moving ${ids.length} links to ${newCategory}...`, 'info');
+      const itemsToUpdate = links.filter(l => ids.includes(l.ID));
+      
+      for (const item of itemsToUpdate) {
+        await saveLink(settings, { ...item, Category: newCategory }, false);
+      }
+      
+      let nextLinks: LinkItem[] = [];
+      setLinks(prev => {
+        const list = prev.map(l => ids.includes(l.ID) ? { ...l, Category: newCategory, UpdatedAt: new Date().toISOString() } : l);
+        nextLinks = list;
+        return list;
+      });
+
+      if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
+        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+      }
+      showToast(`Successfully moved ${ids.length} links to ${newCategory}`, 'success');
+    } catch (err) {
+      showToast(`Bulk move failed: ${(err as Error).message}`, 'error');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Vault Crud Ops
   const handleSaveVault = async (item: Partial<VaultItem>, isNew: boolean) => {
     setIsLoading(true);
@@ -496,6 +554,67 @@ export default function App() {
       showToast(`Restored backup! Imported ${result.linksCount} links and ${result.vaultCount} vault credentials.`, 'success');
     } catch (err) {
       showToast(`Restore failed: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  // Import Bookmarks HTML from Chrome/Edge
+  const handleImportBookmarks = async (htmlText: string) => {
+    setIsLoading(true);
+    try {
+      const parsed = parseNetscapeBookmarks(htmlText);
+      if (parsed.length === 0) {
+        showToast('No valid bookmarks found in the imported file.', 'warning');
+        return;
+      }
+
+      showToast(`Importing ${parsed.length} bookmarks...`, 'info');
+
+      // Check and add any new categories
+      const newCategories = [...settings.categories];
+      let categoriesUpdated = false;
+      parsed.forEach(item => {
+        if (item.Category && !newCategories.includes(item.Category)) {
+          newCategories.push(item.Category);
+          categoriesUpdated = true;
+        }
+      });
+
+      if (categoriesUpdated) {
+        const updatedSettings = { ...settings, categories: newCategories };
+        setSettings(updatedSettings);
+        saveSettings(updatedSettings);
+      }
+
+      // Map bookmarks to LinkItems
+      const newLinkItems: LinkItem[] = parsed.map(b => ({
+        ID: Math.random().toString(36).substring(2, 11),
+        Title: b.Title,
+        Content: b.Url,
+        Category: b.Category,
+        Tags: '',
+        Note: 'Imported from Bookmarks',
+        Favorite: false,
+        Pinned: false,
+        CreatedAt: b.CreatedAt,
+        UpdatedAt: new Date().toISOString(),
+      }));
+
+      // Merge into existing links
+      const mergedLinks = [...newLinkItems, ...links];
+      setLinks(mergedLinks);
+      localStorage.setItem('link_keeper_links', JSON.stringify(mergedLinks));
+
+      // If Google sync is active, upload the bulk-merged list
+      if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
+        showToast('Uploading imported bookmarks to Google Sheets...', 'info');
+        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, mergedLinks);
+      }
+
+      showToast(`Successfully imported ${parsed.length} bookmarks!`, 'success');
+    } catch (err) {
+      showToast(`Failed to import bookmarks: ${(err as Error).message}`, 'error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -613,29 +732,60 @@ export default function App() {
 
           {/* Action Tools */}
           <div className="flex items-center gap-2 md:gap-3 shrink-0">
-            {/* Sync Database Status Badge */}
-            <button
-              onClick={() => startTransition(() => setActiveTab('settings'))}
-              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200/50 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400 hover:bg-zinc-150 dark:hover:bg-zinc-800/60 hover:text-zinc-700 dark:hover:text-zinc-200 transition-all cursor-pointer text-left"
-              title="Click to configure Sync and Google settings"
-            >
-              {settings.googleSyncEnabled && user ? (
-                <>
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Google Drive Direct Sync</span>
-                </>
-              ) : settings.webAppUrl ? (
-                <>
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  <span>Google Sheets Sync</span>
-                </>
-              ) : (
-                <>
-                  <CloudOff className="w-3.5 h-3.5 text-amber-500 animate-pulse" />
-                  <span>Offline (Local Storage) - Click to Sync with Google</span>
-                </>
-              )}
-            </button>
+            {/* Sync Database Status Badge / Google Auth Widget */}
+            {user ? (
+              <div className="flex items-center gap-2 md:gap-3 shrink-0">
+                <button
+                  onClick={() => startTransition(() => setActiveTab('settings'))}
+                  className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-zinc-200/50 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 text-[10px] font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-150 dark:hover:bg-zinc-800/60 hover:text-zinc-700 dark:hover:text-zinc-200 transition-all cursor-pointer text-left"
+                  title={`Logged in as ${user.email}. Click to view sync settings.`}
+                >
+                  {user.photoURL ? (
+                    <img 
+                      src={user.photoURL} 
+                      alt={user.displayName || 'Google User'} 
+                      className="w-4 h-4 rounded-full shrink-0"
+                      referrerPolicy="no-referrer"
+                    />
+                  ) : (
+                    <div className="w-4 h-4 rounded-full bg-emerald-600 text-white flex items-center justify-center text-[8px] font-bold shrink-0">
+                      {user.email ? user.email[0].toUpperCase() : 'U'}
+                    </div>
+                  )}
+                  <span className="hidden sm:inline truncate max-w-[120px]">{user.displayName || user.email}</span>
+                  <span className="flex h-2 w-2 relative">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                  </span>
+                </button>
+
+                {/* Google Logout Button */}
+                <button
+                  onClick={handleGoogleLogout}
+                  disabled={isLoading}
+                  className="p-2.5 bg-red-500/5 hover:bg-red-500/10 text-red-600 dark:text-red-400 rounded-xl transition-all cursor-pointer disabled:opacity-50"
+                  title="Sign Out from Google"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={handleGoogleSignIn}
+                disabled={isLoading}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl border border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10 text-[11px] font-bold text-emerald-600 dark:text-emerald-400 cursor-pointer transition-all shadow-xs shrink-0"
+                title="Sign in with Google to enable cloud backup and sync across devices"
+              >
+                <svg className="w-3.5 h-3.5 fill-current shrink-0" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" />
+                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z" />
+                </svg>
+                <span className="hidden xs:inline">Sign In with Google</span>
+                <span className="xs:hidden">Sign In</span>
+              </button>
+            )}
 
             {/* Manual Sync Trigger */}
             {(((settings.googleSyncEnabled && user && googleToken && settings.googleSpreadsheetId)) || settings.webAppUrl) && (
@@ -741,6 +891,8 @@ export default function App() {
               categories={settings.categories}
               onSaveLink={handleSaveLink}
               onDeleteLink={handleDeleteLink}
+              onBulkDeleteLinks={handleBulkDeleteLinks}
+              onBulkMoveLinks={handleBulkMoveLinks}
               onShowToast={showToast}
               searchTerm={searchTerm}
               isLoading={isLoading}
@@ -756,11 +908,14 @@ export default function App() {
               masterPasswordHash={settings.masterPasswordHash}
               onSetMasterPasswordHash={handleSetMasterPasswordHash}
               searchTerm={searchTerm}
+              autoLockEnabled={settings.autoLockEnabled}
+              autoLockTimeout={settings.autoLockTimeout}
             />
           )}
 
           {activeTab === 'quick-add' && (
             <QuickAdd
+              links={links}
               categories={settings.categories}
               onSaveLink={handleSaveLink}
               onSaveVault={handleSaveVault}
@@ -777,6 +932,7 @@ export default function App() {
               onClearCache={handleClearLocalCache}
               onExportBackup={handleExportBackup}
               onImportBackup={handleImportBackup}
+              onImportBookmarks={handleImportBookmarks}
               onImportVaultItems={handleImportVaultItems}
               onShowToast={showToast}
               onSync={handleSync}

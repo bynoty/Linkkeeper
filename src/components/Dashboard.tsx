@@ -17,14 +17,22 @@ import {
   Check, 
   X, 
   XCircle,
-  FolderOpen
+  FolderOpen,
+  ListChecks,
+  Download,
+  FolderInput,
+  Sparkles,
+  ShieldAlert
 } from 'lucide-react';
+import { suggestCategoryFromUrl, checkForDuplicateLink } from '../lib/api';
 
 interface DashboardProps {
   links: LinkItem[];
   categories: string[];
   onSaveLink: (item: Partial<LinkItem>, isNew: boolean) => Promise<void>;
   onDeleteLink: (id: string) => Promise<void>;
+  onBulkDeleteLinks: (ids: string[]) => Promise<void>;
+  onBulkMoveLinks: (ids: string[], newCategory: string) => Promise<void>;
   onShowToast: (msg: string, type: 'success' | 'info' | 'warning' | 'error') => void;
   searchTerm: string;
   isLoading: boolean;
@@ -35,6 +43,8 @@ export default function Dashboard({
   categories,
   onSaveLink,
   onDeleteLink,
+  onBulkDeleteLinks,
+  onBulkMoveLinks,
   onShowToast,
   searchTerm,
   isLoading,
@@ -49,9 +59,18 @@ export default function Dashboard({
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editForm, setEditForm] = useState<Partial<LinkItem>>({});
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editSuggestedCategory, setEditSuggestedCategory] = useState<string | null>(null);
+  const [editDuplicateMatch, setEditDuplicateMatch] = useState<LinkItem | null>(null);
+  const [showEditDuplicateConfirm, setShowEditDuplicateConfirm] = useState(false);
 
   // State for Delete Confirmation Modal
   const [deleteConfirmItem, setDeleteConfirmItem] = useState<{ id: string; title: string } | null>(null);
+
+  // State for Bulk Actions mode
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [selectedLinkIds, setSelectedLinkIds] = useState<string[]>([]);
+  const [bulkMoveCategory, setBulkMoveCategory] = useState<string>('');
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
   // Helper to check if string is URL
   const isUrl = (str: string): boolean => {
@@ -133,11 +152,124 @@ export default function Dashboard({
     }
   };
 
+  // Bulk Action Handlers
+  const handleCardClick = (id: string) => {
+    setSelectedLinkIds(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(item => item !== id);
+      } else {
+        return [...prev, id];
+      }
+    });
+  };
+
+  const handleSelectAll = () => {
+    const allFilteredIds = filteredLinks.map(l => l.ID);
+    const allSelected = allFilteredIds.every(id => selectedLinkIds.includes(id));
+    if (allSelected) {
+      setSelectedLinkIds(prev => prev.filter(id => !allFilteredIds.includes(id)));
+    } else {
+      setSelectedLinkIds(prev => {
+        const next = [...prev];
+        allFilteredIds.forEach(id => {
+          if (!next.includes(id)) next.push(id);
+        });
+        return next;
+      });
+    }
+  };
+
+  const escapeCSV = (str: string): string => {
+    if (!str) return '';
+    const clean = str.replace(/"/g, '""');
+    return `"${clean}"`;
+  };
+
+  const handleExportSelectedCsv = () => {
+    const selectedItems = links.filter(l => selectedLinkIds.includes(l.ID));
+    if (selectedItems.length === 0) {
+      onShowToast('No links selected for export', 'warning');
+      return;
+    }
+    
+    const headers = ['Title', 'Content', 'Category', 'Tags', 'Note', 'Favorite', 'Pinned', 'CreatedAt'];
+    const csvRows = [headers.map(h => `"${h}"`).join(',')];
+    
+    selectedItems.forEach(item => {
+      const row = [
+        escapeCSV(item.Title),
+        escapeCSV(item.Content),
+        escapeCSV(item.Category),
+        escapeCSV(item.Tags || ''),
+        escapeCSV(item.Note || ''),
+        escapeCSV(item.Favorite ? 'TRUE' : 'FALSE'),
+        escapeCSV(item.Pinned ? 'TRUE' : 'FALSE'),
+        escapeCSV(item.CreatedAt)
+      ];
+      csvRows.push(row.join(','));
+    });
+    
+    const csvContent = "\uFEFF" + csvRows.join('\n'); // Add BOM for Excel UTF-8 support
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `saved_links_bulk_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    
+    onShowToast(`Exported ${selectedItems.length} links to CSV successfully!`, 'success');
+  };
+
+  const handleBulkMoveSubmit = async () => {
+    if (!bulkMoveCategory) {
+      onShowToast('Please select a destination category', 'warning');
+      return;
+    }
+    if (selectedLinkIds.length === 0) {
+      onShowToast('No links selected to move', 'warning');
+      return;
+    }
+    try {
+      await onBulkMoveLinks(selectedLinkIds, bulkMoveCategory);
+      setSelectedLinkIds([]);
+      setIsBulkMode(false);
+      setBulkMoveCategory('');
+    } catch (err) {
+      onShowToast(`Failed to move links: ${(err as Error).message}`, 'error');
+    }
+  };
+
+  const handleBulkDeleteSubmit = async () => {
+    if (selectedLinkIds.length === 0) {
+      onShowToast('No links selected to delete', 'warning');
+      return;
+    }
+    try {
+      await onBulkDeleteLinks(selectedLinkIds);
+      setSelectedLinkIds([]);
+      setIsBulkMode(false);
+      setShowBulkDeleteConfirm(false);
+    } catch (err) {
+      onShowToast(`Failed to delete links: ${(err as Error).message}`, 'error');
+    }
+  };
+
   // Open Edit Modal
   const handleOpenEdit = (link: LinkItem, e: React.MouseEvent) => {
     e.stopPropagation();
     setEditingLink(link);
     setEditForm({ ...link });
+    const suggestion = suggestCategoryFromUrl(link.Content, categories);
+    setEditSuggestedCategory(suggestion);
+    
+    // Check for duplicates
+    const match = checkForDuplicateLink(link.Content, links, link.ID);
+    setEditDuplicateMatch(match);
+    setShowEditDuplicateConfirm(false);
+    
     setIsEditModalOpen(true);
   };
 
@@ -148,11 +280,22 @@ export default function Dashboard({
       onShowToast('Title is required', 'warning');
       return;
     }
+    
+    // Intercept with a warning if the edited content is a duplicate
+    const duplicate = checkForDuplicateLink(editForm.Content || '', links, editingLink?.ID);
+    if (duplicate && !showEditDuplicateConfirm) {
+      setEditDuplicateMatch(duplicate);
+      onShowToast('Warning: This URL matches an existing saved link. Check the warning below.', 'warning');
+      return;
+    }
+
     setIsSavingEdit(true);
     try {
       await onSaveLink(editForm, false);
       setIsEditModalOpen(false);
       setEditingLink(null);
+      setEditDuplicateMatch(null);
+      setShowEditDuplicateConfirm(false);
       onShowToast('Updated successfully!', 'success');
     } catch (err) {
       onShowToast(`Failed to save: ${(err as Error).message}`, 'error');
@@ -341,22 +484,116 @@ export default function Dashboard({
               Showing <span className="font-semibold text-zinc-800 dark:text-zinc-200">{filteredLinks.length}</span> {filteredLinks.length === 1 ? 'item' : 'items'}
             </div>
             
-            <div className="flex items-center gap-2">
-              <label htmlFor="dashboard-sort" className="text-xs font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
-                Sort by:
-              </label>
-              <select
-                id="dashboard-sort"
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as 'date-added' | 'alphabetical' | 'favorited')}
-                className="text-xs font-medium bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden cursor-pointer"
+            <div className="flex items-center gap-2 flex-wrap">
+              {/* Bulk Actions Toggle Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBulkMode(!isBulkMode);
+                  setSelectedLinkIds([]);
+                }}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${
+                  isBulkMode 
+                    ? 'bg-emerald-600 text-white shadow-xs' 
+                    : 'bg-zinc-100 dark:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-200 dark:hover:bg-zinc-700'
+                }`}
               >
-                <option value="date-added">Date Added (Newest)</option>
-                <option value="alphabetical">Alphabetical (A-Z)</option>
-                <option value="favorited">Favorited First</option>
-              </select>
+                <ListChecks className="w-3.5 h-3.5" />
+                {isBulkMode ? 'Exit Bulk Actions' : 'Bulk Actions'}
+              </button>
+
+              <div className="flex items-center gap-2">
+                <label htmlFor="dashboard-sort" className="text-xs font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+                  Sort by:
+                </label>
+                <select
+                  id="dashboard-sort"
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as 'date-added' | 'alphabetical' | 'favorited')}
+                  className="text-xs font-medium bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden cursor-pointer"
+                >
+                  <option value="date-added">Date Added (Newest)</option>
+                  <option value="alphabetical">Alphabetical (A-Z)</option>
+                  <option value="favorited">Favorited First</option>
+                </select>
+              </div>
             </div>
           </div>
+
+          {/* Bulk Action Controls Bar */}
+          {isBulkMode && (
+            <div className="bg-emerald-500/5 dark:bg-emerald-500/5 border border-emerald-500/20 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 animate-in slide-in-from-top-2 duration-200">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-semibold text-emerald-800 dark:text-emerald-400">
+                  Selected <span className="font-bold text-sm underline">{selectedLinkIds.length}</span> items
+                </span>
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  className="px-2.5 py-1 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 hover:border-emerald-500 rounded-lg text-[11px] font-medium text-zinc-600 dark:text-zinc-300 flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  {filteredLinks.length > 0 && filteredLinks.every(l => selectedLinkIds.includes(l.ID)) ? (
+                    <>
+                      <X className="w-3 h-3 text-red-500 inline" /> Deselect All
+                    </>
+                  ) : (
+                    <>
+                      <Check className="w-3 h-3 text-emerald-600 inline" /> Select All
+                    </>
+                  )}
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Export to CSV */}
+                <button
+                  type="button"
+                  onClick={handleExportSelectedCsv}
+                  disabled={selectedLinkIds.length === 0}
+                  className="px-3 py-1.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 disabled:opacity-40 disabled:cursor-not-allowed text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all"
+                  title="Export Selected to CSV"
+                >
+                  <Download className="w-3.5 h-3.5" /> CSV Export
+                </button>
+
+                {/* Move Category */}
+                <div className="flex items-center gap-1.5 bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 p-1 rounded-xl">
+                  <select
+                    value={bulkMoveCategory}
+                    onChange={(e) => setBulkMoveCategory(e.target.value)}
+                    disabled={selectedLinkIds.length === 0}
+                    className="text-xs font-medium bg-transparent text-zinc-700 dark:text-zinc-300 border-0 focus:ring-0 focus:outline-hidden cursor-pointer px-2 py-0.5"
+                  >
+                    <option value="">Move to Category...</option>
+                    {categories.map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={handleBulkMoveSubmit}
+                    disabled={selectedLinkIds.length === 0 || !bulkMoveCategory}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 disabled:hover:bg-emerald-600 text-white text-xs font-semibold rounded-lg flex items-center gap-1 cursor-pointer transition-all"
+                  >
+                    <FolderInput className="w-3 h-3" /> Move
+                  </button>
+                </div>
+
+                {/* Delete Selected */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedLinkIds.length === 0) return;
+                    setShowBulkDeleteConfirm(true);
+                  }}
+                  disabled={selectedLinkIds.length === 0}
+                  className="px-3 py-1.5 bg-red-600 hover:bg-red-500 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                >
+                  <Trash2 className="w-3.5 h-3.5" /> Delete Selected
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Skeletons/Loading state */}
           {isLoading ? (
@@ -401,18 +638,40 @@ export default function Dashboard({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredLinks.map(link => {
                 const containsLink = isUrl(link.Content);
+                const isSelected = selectedLinkIds.includes(link.ID);
                 return (
                   <div 
                     key={link.ID}
-                    className={`group relative bg-white dark:bg-zinc-900 rounded-2xl border transition-all duration-300 hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700 flex flex-col justify-between overflow-hidden ${
-                      link.Pinned 
-                        ? 'border-emerald-500/50 dark:border-emerald-500/40 bg-linear-to-br from-emerald-50/10 to-transparent' 
-                        : 'border-zinc-200/70 dark:border-zinc-800'
-                    }`}
+                    onClick={() => {
+                      if (isBulkMode) {
+                        handleCardClick(link.ID);
+                      }
+                    }}
+                    className={`group relative bg-white dark:bg-zinc-900 rounded-2xl border transition-all duration-300 flex flex-col justify-between overflow-hidden ${
+                      isBulkMode ? 'cursor-pointer select-none' : ''
+                    } ${
+                      isSelected
+                        ? 'ring-2 ring-emerald-500 border-emerald-500/50 dark:border-emerald-500 bg-emerald-50/5 dark:bg-emerald-950/5'
+                        : link.Pinned 
+                          ? 'border-emerald-500/50 dark:border-emerald-500/40 bg-linear-to-br from-emerald-50/10 to-transparent' 
+                          : 'border-zinc-200/70 dark:border-zinc-800'
+                    } hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700`}
                   >
+                    {/* Bulk Selection Checkbox Overlay */}
+                    {isBulkMode && (
+                      <div className="absolute top-4 left-4 z-10">
+                        {isSelected ? (
+                          <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs border border-emerald-600 animate-in zoom-in-50 duration-150">
+                            <Check className="w-3.5 h-3.5 stroke-[3]" />
+                          </div>
+                        ) : (
+                          <div className="w-5 h-5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 group-hover:border-emerald-500 transition-colors" />
+                        )}
+                      </div>
+                    )}
                     
                     {/* Header */}
-                    <div className="p-5 space-y-2">
+                    <div className={`p-5 space-y-2 ${isBulkMode ? 'pl-12' : ''}`}>
                       <div className="flex items-start justify-between gap-4">
                         <div className="space-y-1 max-w-[80%]">
                           <h4 className="font-semibold text-zinc-900 dark:text-white leading-tight break-words group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
@@ -424,26 +683,28 @@ export default function Dashboard({
                         </div>
                         
                         {/* Action pins */}
-                        <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
-                          <button
-                            onClick={(e) => handleTogglePin(link, e)}
-                            className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
-                              link.Pinned ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
-                            }`}
-                            title={link.Pinned ? 'Unpin' : 'Pin to top'}
-                          >
-                            <Pin className={`w-4 h-4 ${link.Pinned ? 'fill-emerald-600 dark:fill-emerald-400' : ''}`} />
-                          </button>
-                          <button
-                            onClick={(e) => handleToggleFavorite(link, e)}
-                            className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
-                              link.Favorite ? 'text-amber-500' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
-                            }`}
-                            title={link.Favorite ? 'Unfavorite' : 'Add to favorites'}
-                          >
-                            <Star className={`w-4 h-4 ${link.Favorite ? 'fill-amber-500' : ''}`} />
-                          </button>
-                        </div>
+                        {!isBulkMode && (
+                          <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={(e) => handleTogglePin(link, e)}
+                              className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
+                                link.Pinned ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
+                              }`}
+                              title={link.Pinned ? 'Unpin' : 'Pin to top'}
+                            >
+                              <Pin className={`w-4 h-4 ${link.Pinned ? 'fill-emerald-600 dark:fill-emerald-400' : ''}`} />
+                            </button>
+                            <button
+                              onClick={(e) => handleToggleFavorite(link, e)}
+                              className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
+                                link.Favorite ? 'text-amber-500' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
+                              }`}
+                              title={link.Favorite ? 'Unfavorite' : 'Add to favorites'}
+                            >
+                              <Star className={`w-4 h-4 ${link.Favorite ? 'fill-amber-500' : ''}`} />
+                            </button>
+                          </div>
+                        )}
                       </div>
 
                       {/* Content Section (URL or Text Note) */}
@@ -453,24 +714,26 @@ export default function Dashboard({
                             <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate flex-1 block">
                               {link.Content}
                             </span>
-                            <div className="flex gap-1 shrink-0">
-                              <button 
-                                onClick={() => handleCopy(link.Content, 'URL')}
-                                className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all cursor-pointer"
-                                title="Copy Link"
-                              >
-                                <Copy className="w-3.5 h-3.5" />
-                              </button>
-                              <a 
-                                href={getFullUrl(link.Content)}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all"
-                                title="Open Link"
-                              >
-                                <ExternalLink className="w-3.5 h-3.5" />
-                              </a>
-                            </div>
+                            {!isBulkMode && (
+                              <div className="flex gap-1 shrink-0">
+                                <button 
+                                  onClick={() => handleCopy(link.Content, 'URL')}
+                                  className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all cursor-pointer"
+                                  title="Copy Link"
+                                >
+                                  <Copy className="w-3.5 h-3.5" />
+                                </button>
+                                <a 
+                                  href={getFullUrl(link.Content)}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all"
+                                  title="Open Link"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </a>
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <p className="text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap bg-zinc-50 dark:bg-zinc-800/40 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30 max-h-36 overflow-y-auto">
@@ -496,11 +759,14 @@ export default function Dashboard({
                             return (
                               <button
                                 key={trimmed}
+                                disabled={isBulkMode}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedTag(isFilteringByThisTag ? null : trimmed);
                                 }}
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-all cursor-pointer ${
+                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${
+                                  isBulkMode ? 'cursor-default' : 'cursor-pointer'
+                                } ${
                                   isFilteringByThisTag
                                     ? 'bg-amber-500 text-white border border-transparent'
                                     : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 border border-zinc-200/10'
@@ -521,34 +787,40 @@ export default function Dashboard({
                         <span>{new Date(link.CreatedAt).toLocaleDateString()}</span>
                       </div>
                       
-                      <div className="flex items-center gap-2">
-                        {/* Copy Content Button */}
-                        <button
-                          onClick={() => handleCopy(link.Content, 'Content')}
-                          className="px-2 py-1 rounded-md text-[11px] font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1 cursor-pointer"
-                          title="Copy Full Content"
-                        >
-                          <Copy className="w-3.5 h-3.5" /> Copy
-                        </button>
+                      {!isBulkMode ? (
+                        <div className="flex items-center gap-2">
+                          {/* Copy Content Button */}
+                          <button
+                            onClick={() => handleCopy(link.Content, 'Content')}
+                            className="px-2 py-1 rounded-md text-[11px] font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1 cursor-pointer"
+                            title="Copy Full Content"
+                          >
+                            <Copy className="w-3.5 h-3.5" /> Copy
+                          </button>
 
-                        {/* Edit Button */}
-                        <button
-                          onClick={(e) => handleOpenEdit(link, e)}
-                          className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-all cursor-pointer"
-                          title="Edit Card"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
+                          {/* Edit Button */}
+                          <button
+                            onClick={(e) => handleOpenEdit(link, e)}
+                            className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-all cursor-pointer"
+                            title="Edit Card"
+                          >
+                            <Edit2 className="w-3.5 h-3.5" />
+                          </button>
 
-                        {/* Delete Button */}
-                        <button
-                          onClick={(e) => handleDelete(link.ID, link.Title, e)}
-                          className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-all cursor-pointer"
-                          title="Delete Card"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                          {/* Delete Button */}
+                          <button
+                            onClick={(e) => handleDelete(link.ID, link.Title, e)}
+                            className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-all cursor-pointer"
+                            title="Delete Card"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className={`text-[10px] font-bold ${isSelected ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                          {isSelected ? '✓ SELECTED' : 'CLICK TO SELECT'}
+                        </div>
+                      )}
                     </div>
 
                   </div>
@@ -600,10 +872,48 @@ export default function Dashboard({
                   required
                   rows={3}
                   value={editForm.Content || ''}
-                  onChange={e => setEditForm({ ...editForm, Content: e.target.value })}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setEditForm({ ...editForm, Content: val });
+                    const suggestion = suggestCategoryFromUrl(val, categories);
+                    setEditSuggestedCategory(suggestion);
+                    
+                    // Check duplicate
+                    const match = checkForDuplicateLink(val, links, editingLink?.ID);
+                    setEditDuplicateMatch(match);
+                    setShowEditDuplicateConfirm(false);
+                  }}
                   className="w-full px-3 py-2 rounded-xl text-sm border border-zinc-200 dark:border-zinc-800 bg-zinc-50 dark:bg-zinc-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-mono dark:text-white"
                   placeholder="https://... or raw markdown notes"
                 />
+
+                {editDuplicateMatch && (
+                  <div className="mt-2 p-3 bg-amber-500/5 dark:bg-amber-950/20 border border-amber-500/20 rounded-xl text-xs space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400">
+                      <ShieldAlert className="w-4 h-4 shrink-0 text-amber-500" />
+                      <span>Duplicate Link Detected</span>
+                    </div>
+                    <p className="text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      This exact link/URL already exists in your list as <strong className="font-semibold text-zinc-800 dark:text-zinc-200">"{editDuplicateMatch.Title}"</strong> (Category: <strong className="font-semibold text-zinc-800 dark:text-zinc-200">{editDuplicateMatch.Category}</strong>).
+                    </p>
+                    {!showEditDuplicateConfirm ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowEditDuplicateConfirm(true);
+                          onShowToast('Warning bypassed. You can now click "Save Changes".', 'info');
+                        }}
+                        className="text-[10px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-md font-bold cursor-pointer transition-colors"
+                      >
+                        Ignore & Allow Duplicate
+                      </button>
+                    ) : (
+                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 bg-emerald-500/5 dark:bg-emerald-950/20 px-2.5 py-1 rounded-md border border-emerald-500/10 w-fit">
+                        <Check className="w-3 h-3 stroke-[3]" /> Warning bypassed. Click Save Changes to proceed.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Category */}
@@ -620,7 +930,33 @@ export default function Dashboard({
                   {categories.map(cat => (
                     <option key={cat} value={cat}>{cat}</option>
                   ))}
+                  {editSuggestedCategory && !categories.includes(editSuggestedCategory) && editSuggestedCategory !== 'General' && (
+                    <option value={editSuggestedCategory}>{editSuggestedCategory} (Suggested)</option>
+                  )}
                 </select>
+
+                {editSuggestedCategory && (
+                  <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/5 dark:bg-amber-950/20 px-2.5 py-1.5 rounded-xl border border-amber-500/20">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
+                    <span className="truncate">Suggested: <strong className="font-semibold">{editSuggestedCategory}</strong></span>
+                    {editForm.Category !== editSuggestedCategory ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditForm({ ...editForm, Category: editSuggestedCategory });
+                          onShowToast(`Category updated to ${editSuggestedCategory}`, 'success');
+                        }}
+                        className="ml-auto text-[10px] font-bold underline hover:text-amber-700 dark:hover:text-amber-300 cursor-pointer transition-colors"
+                      >
+                        Apply
+                      </button>
+                    ) : (
+                      <span className="ml-auto text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                        <Check className="w-3 h-3 stroke-[3]" /> Applied
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Tags */}
@@ -709,6 +1045,43 @@ export default function Dashboard({
                   className="flex-1 px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-500 rounded-xl cursor-pointer transition-colors shadow-xs"
                 >
                   Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Bulk Delete Confirmation Modal */}
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs">
+          <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200 dark:border-zinc-800 w-full max-w-sm shadow-xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-center space-y-4">
+              <div className="w-12 h-12 bg-red-100 dark:bg-red-950/40 rounded-full flex items-center justify-center mx-auto text-red-600 dark:text-red-400">
+                <Trash2 className="w-6 h-6" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="font-semibold text-zinc-900 dark:text-white text-base">
+                  Delete Multiple Items
+                </h3>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">
+                  Are you sure you want to delete <strong className="text-red-600 dark:text-red-400">{selectedLinkIds.length}</strong> selected items? This action cannot be undone.
+                </p>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowBulkDeleteConfirm(false)}
+                  className="flex-1 px-4 py-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-xl cursor-pointer transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBulkDeleteSubmit}
+                  className="flex-1 px-4 py-2 text-xs font-semibold text-white bg-red-600 hover:bg-red-500 rounded-xl cursor-pointer transition-colors shadow-xs"
+                >
+                  Delete Selected
                 </button>
               </div>
             </div>

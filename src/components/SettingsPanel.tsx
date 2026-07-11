@@ -36,6 +36,7 @@ interface SettingsPanelProps {
   onClearCache: () => void;
   onExportBackup: () => void;
   onImportBackup: (backupStr: string) => void;
+  onImportBookmarks?: (htmlText: string) => Promise<void>;
   onImportVaultItems: (items: VaultItem[]) => Promise<void>;
   onShowToast: (msg: string, type: 'success' | 'info' | 'warning' | 'error') => void;
   onSync: () => Promise<void>;
@@ -54,6 +55,7 @@ export default function SettingsPanel({
   onClearCache,
   onExportBackup,
   onImportBackup,
+  onImportBookmarks,
   onImportVaultItems,
   onShowToast,
   onSync,
@@ -207,6 +209,28 @@ export default function SettingsPanel({
     };
     reader.readAsText(file);
     // Reset file input target
+    e.target.value = '';
+  };
+
+  // Import Bookmarks HTML Selector Handler
+  const handleBookmarksImportChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        if (onImportBookmarks) {
+          onImportBookmarks(text);
+        } else {
+          onShowToast('Bookmark import is not supported in this view.', 'warning');
+        }
+      } catch (err) {
+        onShowToast(`Import failed: ${(err as Error).message}`, 'error');
+      }
+    };
+    reader.readAsText(file);
     e.target.value = '';
   };
 
@@ -442,6 +466,75 @@ export default function SettingsPanel({
         {/* Left Side: Category Manager & Backup Options */}
         <div className="lg:col-span-1 space-y-6">
           
+          {/* Security & Auto-Lock Settings */}
+          <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200/70 dark:border-zinc-800 shadow-xs space-y-4">
+            <h3 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Lock className="w-4 h-4 text-emerald-600" />
+              Security & Auto-Lock
+            </h3>
+
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-normal">
+              Automatically lock the credentials vault if the application remains inactive.
+            </p>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-zinc-700 dark:text-zinc-300">Enable Auto-Lock</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextVal = !settings.autoLockEnabled;
+                    onUpdateSettings({
+                      ...settings,
+                      autoLockEnabled: nextVal,
+                    });
+                    onShowToast(`Auto-Lock ${nextVal ? 'enabled' : 'disabled'}.`, 'success');
+                  }}
+                  className={`relative inline-flex h-5 w-10 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-hidden ${
+                    settings.autoLockEnabled ? 'bg-emerald-600' : 'bg-zinc-200 dark:bg-zinc-800'
+                  }`}
+                  aria-label="Toggle Auto-Lock"
+                >
+                  <span
+                    aria-hidden="true"
+                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-md ring-0 transition duration-200 ease-in-out ${
+                      settings.autoLockEnabled ? 'translate-x-5' : 'translate-x-0'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {settings.autoLockEnabled && (
+                <div className="space-y-1.5 animate-in fade-in duration-200">
+                  <label htmlFor="auto-lock-select" className="block text-[11px] font-semibold text-zinc-500 dark:text-zinc-400">
+                    Inactivity Timeout
+                  </label>
+                  <select
+                    id="auto-lock-select"
+                    value={settings.autoLockTimeout || 15}
+                    onChange={(e) => {
+                      const mins = parseInt(e.target.value, 10);
+                      onUpdateSettings({
+                        ...settings,
+                        autoLockTimeout: mins,
+                      });
+                      onShowToast(`Auto-Lock timeout set to ${mins} minutes.`, 'success');
+                    }}
+                    className="w-full text-xs font-medium bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-2 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden cursor-pointer"
+                  >
+                    <option value={1}>1 Minute</option>
+                    <option value={3}>3 Minutes</option>
+                    <option value={5}>5 Minutes</option>
+                    <option value={10}>10 Minutes</option>
+                    <option value={15}>15 Minutes</option>
+                    <option value={30}>30 Minutes</option>
+                    <option value={60}>1 Hour</option>
+                  </select>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Categories Management */}
           <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200/70 dark:border-zinc-800 shadow-xs">
             <h3 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5 mb-4">
@@ -494,21 +587,23 @@ export default function SettingsPanel({
             </h3>
             
             <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-normal">
-              Download your configurations, notes, and encrypted passwords as a JSON backup file, or import JSON backups and Google Passwords CSV exports.
+              Download your configurations, notes, and encrypted passwords as a JSON backup file, or import JSON backups, Google Passwords CSV exports, and Chrome/Edge Bookmarks HTML files.
             </p>
 
             <div className="space-y-2">
               {/* Export backup button */}
               <button
                 onClick={onExportBackup}
-                className="w-full py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                className="w-full py-2 px-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all text-center"
               >
-                <Download className="w-3.5 h-3.5" /> Export Data Backup
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-center">Export Data Backup</span>
               </button>
 
               {/* Import backup file selector wrapper */}
-              <label className="w-full py-2 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all">
-                <Upload className="w-3.5 h-3.5" /> Import Data Backup (JSON/CSV)
+              <label className="w-full py-2 px-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all text-center">
+                <Upload className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-center">Import Data Backup (JSON/CSV)</span>
                 <input
                   type="file"
                   accept=".json,.csv"
@@ -517,22 +612,36 @@ export default function SettingsPanel({
                 />
               </label>
 
+              {/* Import Bookmarks HTML from Chrome/Edge */}
+              <label className="w-full py-2 px-3 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all text-center">
+                <Upload className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="text-center">Import Bookmarks (HTML from Chrome/Edge)</span>
+                <input
+                  type="file"
+                  accept=".html,.htm"
+                  onChange={handleBookmarksImportChange}
+                  className="hidden"
+                />
+              </label>
+
               {/* Export Vault to CSV */}
               <button
                 type="button"
                 onClick={handleExportVaultCsvClick}
-                className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-xs text-center"
               >
-                <FileText className="w-3.5 h-3.5" /> Export Vault to CSV (Google/Bitwarden)
+                <FileText className="w-3.5 h-3.5 shrink-0" />
+                <span className="text-center">Export Vault to CSV (Google/Bitwarden)</span>
               </button>
 
               {/* Download Sample CSV Template */}
               <button
                 type="button"
                 onClick={handleDownloadSampleCsv}
-                className="w-full py-2 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all border border-emerald-100 dark:border-emerald-900/30"
+                className="w-full py-2 px-3 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/20 dark:hover:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all border border-emerald-100 dark:border-emerald-900/30 text-center"
               >
-                <FileText className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" /> Download Sample CSV Template
+                <FileText className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+                <span className="text-center">Download Sample CSV Template</span>
               </button>
             </div>
           </div>

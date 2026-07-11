@@ -5,6 +5,7 @@
 import React, { useState } from 'react';
 import CryptoJS from 'crypto-js';
 import { LinkItem, VaultItem } from '../types';
+import { suggestCategoryFromUrl, checkForDuplicateLink } from '../lib/api';
 import { 
   Link as LinkIcon, 
   FileText, 
@@ -14,10 +15,12 @@ import {
   Check, 
   ShieldAlert,
   Eye,
-  EyeOff
+  EyeOff,
+  Sparkles
 } from 'lucide-react';
 
 interface QuickAddProps {
+  links: LinkItem[];
   categories: string[];
   onSaveLink: (item: Partial<LinkItem>, isNew: boolean) => Promise<void>;
   onSaveVault: (item: Partial<VaultItem>, isNew: boolean) => Promise<void>;
@@ -29,6 +32,7 @@ interface QuickAddProps {
 type QuickType = 'link' | 'note' | 'credential';
 
 export default function QuickAdd({
+  links,
   categories,
   onSaveLink,
   onSaveVault,
@@ -43,10 +47,14 @@ export default function QuickAdd({
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState('General');
+  const [suggestedCategory, setSuggestedCategory] = useState<string | null>(null);
+  const [hasManualCategoryChange, setHasManualCategoryChange] = useState(false);
   const [tags, setTags] = useState('');
   const [note, setNote] = useState('');
   const [favorite, setFavorite] = useState(false);
   const [pinned, setPinned] = useState(false);
+  const [duplicateMatch, setDuplicateMatch] = useState<LinkItem | null>(null);
+  const [showDuplicateConfirm, setShowDuplicateConfirm] = useState(false);
 
   // Form States - Credential
   const [service, setService] = useState('');
@@ -64,10 +72,14 @@ export default function QuickAdd({
     setTitle('');
     setContent('');
     setCategory('General');
+    setSuggestedCategory(null);
+    setHasManualCategoryChange(false);
     setTags('');
     setNote('');
     setFavorite(false);
     setPinned(false);
+    setDuplicateMatch(null);
+    setShowDuplicateConfirm(false);
 
     setService('');
     setUsername('');
@@ -93,6 +105,14 @@ export default function QuickAdd({
         }
         if (!content.trim()) {
           onShowToast('Content or description is required', 'warning');
+          setIsSubmitting(false);
+          return;
+        }
+
+        // Check for duplicate link
+        if (activeType === 'link' && duplicateMatch && !showDuplicateConfirm) {
+          setShowDuplicateConfirm(true);
+          onShowToast('Warning: This link already exists in your storage. Check the warning panel.', 'warning');
           setIsSubmitting(false);
           return;
         }
@@ -256,9 +276,56 @@ export default function QuickAdd({
                   rows={activeType === 'link' ? 2 : 5}
                   placeholder={activeType === 'link' ? 'https://developers.google.com' : 'Write notes here. Supports plaintext or multi-line configurations.'}
                   value={content}
-                  onChange={e => setContent(e.target.value)}
+                  onChange={e => {
+                    const val = e.target.value;
+                    setContent(val);
+                    if (activeType === 'link') {
+                      const suggestion = suggestCategoryFromUrl(val, categories);
+                      setSuggestedCategory(suggestion);
+                      if (suggestion && !hasManualCategoryChange) {
+                        setCategory(suggestion);
+                      }
+                      
+                      // Check for duplicates
+                      const match = checkForDuplicateLink(val, links);
+                      setDuplicateMatch(match);
+                      setShowDuplicateConfirm(false);
+                    } else {
+                      setSuggestedCategory(null);
+                      setDuplicateMatch(null);
+                      setShowDuplicateConfirm(false);
+                    }
+                  }}
                   className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden font-mono dark:text-white"
                 />
+
+                {activeType === 'link' && duplicateMatch && (
+                  <div className="mt-2 p-3 bg-amber-500/5 dark:bg-amber-950/20 border border-amber-500/20 rounded-xl text-xs space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-150">
+                    <div className="flex items-center gap-1.5 font-semibold text-amber-600 dark:text-amber-400">
+                      <ShieldAlert className="w-4 h-4 shrink-0 text-amber-500" />
+                      <span>Duplicate Bookmark Detected</span>
+                    </div>
+                    <p className="text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                      This URL is already saved in your bookmarks as <strong className="font-semibold text-zinc-800 dark:text-zinc-200">"{duplicateMatch.Title}"</strong> (Category: <strong className="font-semibold text-zinc-800 dark:text-zinc-200">{duplicateMatch.Category}</strong>).
+                    </p>
+                    {!showDuplicateConfirm ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowDuplicateConfirm(true);
+                          onShowToast('Warning bypassed. You can now click "Save" anyway.', 'info');
+                        }}
+                        className="text-[10px] bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 px-2 py-1 rounded-md font-bold cursor-pointer transition-colors w-fit"
+                      >
+                        Ignore & Allow Duplicate
+                      </button>
+                    ) : (
+                      <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 bg-emerald-500/5 dark:bg-emerald-950/20 px-2.5 py-1 rounded-md border border-emerald-500/10 w-fit">
+                        <Check className="w-3 h-3 stroke-[3]" /> Warning bypassed. Click Save below to proceed.
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Grid: Category & Tags */}
@@ -271,14 +338,43 @@ export default function QuickAdd({
                   </label>
                   <select
                     value={category}
-                    onChange={e => setCategory(e.target.value)}
+                    onChange={e => {
+                      setCategory(e.target.value);
+                      setHasManualCategoryChange(true);
+                    }}
                     className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden dark:text-white"
                   >
                     <option value="General">General</option>
                     {categories.map(cat => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
+                    {suggestedCategory && !categories.includes(suggestedCategory) && suggestedCategory !== 'General' && (
+                      <option value={suggestedCategory}>{suggestedCategory} (Suggested)</option>
+                    )}
                   </select>
+                  
+                  {suggestedCategory && (
+                    <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/5 dark:bg-amber-950/20 px-2.5 py-1.5 rounded-xl border border-amber-500/20">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse shrink-0" />
+                      <span className="truncate">Suggested: <strong className="font-semibold">{suggestedCategory}</strong></span>
+                      {category !== suggestedCategory ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCategory(suggestedCategory);
+                            onShowToast(`Category updated to ${suggestedCategory}`, 'success');
+                          }}
+                          className="ml-auto text-[10px] font-bold underline hover:text-amber-700 dark:hover:text-amber-300 cursor-pointer transition-colors"
+                        >
+                          Apply
+                        </button>
+                      ) : (
+                        <span className="ml-auto text-[10px] font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-0.5">
+                          <Check className="w-3 h-3 stroke-[3]" /> Applied
+                        </span>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Tags input */}

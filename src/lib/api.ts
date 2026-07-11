@@ -20,6 +20,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   syncOnLoad: false,
   googleSyncEnabled: false,
   googleSpreadsheetId: '',
+  autoLockEnabled: false,
+  autoLockTimeout: 15,
 };
 
 /**
@@ -579,4 +581,170 @@ export function validateAndParseVaultCsv(csvText: string): RawCsvVaultItem[] {
 
   return result;
 }
+
+export interface ParsedBookmark {
+  Title: string;
+  Url: string;
+  Category: string;
+  CreatedAt: string;
+}
+
+/**
+ * Parses Netscape Bookmarks HTML files (Chrome / Edge / Firefox exports).
+ */
+export function parseNetscapeBookmarks(htmlText: string): ParsedBookmark[] {
+  const bookmarks: ParsedBookmark[] = [];
+  const lines = htmlText.split(/\r?\n/);
+  
+  let currentCategory = 'General';
+  
+  // Regex to match <H3 ...>Category Name</H3>
+  const categoryRegex = /<H3[^>]*>(.*?)<\/H3>/i;
+  // Regex to match <A HREF="url" ...>Title</A>
+  const bookmarkRegex = /<A\s+HREF="([^"]+)"[^>]*>(.*?)<\/A>/i;
+  // Regex to extract ADD_DATE
+  const dateRegex = /ADD_DATE="(\d+)"/i;
+
+  for (let line of lines) {
+    line = line.trim();
+    
+    // Check for category
+    const catMatch = line.match(categoryRegex);
+    if (catMatch) {
+      const catName = catMatch[1].trim();
+      if (catName && catName.toLowerCase() !== 'bookmarks bar' && catName.toLowerCase() !== 'bookmarks') {
+        currentCategory = catName;
+      }
+      continue;
+    }
+    
+    // Check for bookmark link
+    const linkMatch = line.match(bookmarkRegex);
+    if (linkMatch) {
+      const url = linkMatch[1].trim();
+      
+      // Netscape HTML decoding helper for entities like &amp;, &quot;, &lt;, &gt;, &#39;
+      let title = linkMatch[2].trim() || 'Untitled Link';
+      title = title
+        .replace(/&amp;/g, '&')
+        .replace(/&quot;/g, '"')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'");
+
+      let createdAt = new Date().toISOString();
+      const dateMatch = line.match(dateRegex);
+      if (dateMatch) {
+        const unixTime = parseInt(dateMatch[1], 10);
+        if (!isNaN(unixTime)) {
+          const dateMs = unixTime > 10000000000 ? unixTime : unixTime * 1000;
+          createdAt = new Date(dateMs).toISOString();
+        }
+      }
+      
+      bookmarks.push({
+        Title: title,
+        Url: url,
+        Category: currentCategory,
+        CreatedAt: createdAt,
+      });
+    }
+  }
+  
+  return bookmarks;
+}
+
+export interface SuggestionRule {
+  keywords: string[];
+  category: string;
+}
+
+export const SUGGESTION_RULES: SuggestionRule[] = [
+  {
+    keywords: ['github', 'gitlab', 'bitbucket', 'stackoverflow', 'npm', 'localhost', 'codepen', 'vercel', 'netlify', 'render', 'aws', 'gcp', 'azure', 'docker', 'typescript', 'javascript', 'python', 'reactjs', 'rust-lang', 'go.dev', 'sqlite', 'postgres', 'mysql', 'mongodb', 'kubernetes', 'jenkins', 'travis', 'circleci', 'api'],
+    category: 'Development'
+  },
+  {
+    keywords: ['youtube', 'netflix', 'spotify', 'twitch', 'disney', 'hulu', 'hbo', 'anime', 'vimeo', 'soundcloud', 'imdb', 'roblox', 'steam', 'epicgames', 'nintendo', 'playstation', 'xbox'],
+    category: 'Entertainment'
+  },
+  {
+    keywords: ['facebook', 'twitter', 'instagram', 'linkedin', 'reddit', 'tiktok', 'pinterest', 'discord', 'telegram', 'whatsapp', 'messenger', 'medium', 'dev.to', 'slack'],
+    category: 'Social'
+  },
+  {
+    keywords: ['bank', 'paypal', 'stripe', 'finance', 'crypto', 'coinbase', 'robinhood', 'chase', 'fidelity', 'bitcoin', 'ethereum', 'trading', 'ledger', 'binance', 'stocks', 'wallet'],
+    category: 'Finance'
+  },
+  {
+    keywords: ['wikipedia', 'medium', 'coursera', 'udemy', 'edx', 'khanacademy', 'scholar', 'edu', 'quizlet', 'duolingo', 'classroom', 'canvas', 'blackboard', 'researchgate', 'arxiv'],
+    category: 'Education'
+  },
+  {
+    keywords: ['google', 'bing', 'yahoo', 'duckduckgo', 'dictionary', 'thesaurus', 'lexico', 'britannica', 'howtogeek', 'lifewire', 'wikipedia'],
+    category: 'Reference'
+  },
+  {
+    keywords: ['gmail', 'outlook', 'protonmail', 'trello', 'asana', 'notion', 'clickup', 'monday', 'jira', 'confluence', 'zoom', 'teams', 'meet', 'calendar', 'drive', 'docs', 'sheets', 'slides', 'dropbox', 'onedrive'],
+    category: 'Work'
+  },
+  {
+    keywords: ['nike', 'amazon', 'ebay', 'aliexpress', 'shopify', 'target', 'walmart', 'ikea', 'decathlon', 'costco', 'etsy', 'shopee', 'lazada', 'bestbuy'],
+    category: 'Shopping'
+  }
+];
+
+export function suggestCategoryFromUrl(url: string, categoriesList: string[] = []): string | null {
+  if (!url) return null;
+  const lowerUrl = url.toLowerCase();
+  
+  for (const rule of SUGGESTION_RULES) {
+    if (rule.keywords.some(kw => lowerUrl.includes(kw))) {
+      const existingMatch = categoriesList.find(c => c.toLowerCase() === rule.category.toLowerCase());
+      return existingMatch || rule.category;
+    }
+  }
+  
+  return null;
+}
+
+/**
+ * Normalizes a URL/text for duplicate link detection.
+ * Removes protocol (http/https), "www.", trailing slash, and leading/trailing whitespace.
+ */
+export function normalizeUrl(url: string): string {
+  if (!url) return '';
+  let clean = url.trim().toLowerCase();
+  
+  // Remove protocol
+  clean = clean.replace(/^(https?:\/\/)?(www\.)?/, '');
+  
+  // Remove trailing slash
+  if (clean.endsWith('/')) {
+    clean = clean.slice(0, -1);
+  }
+  
+  return clean;
+}
+
+/**
+ * Checks if a link with the same normalized content already exists in the current collection.
+ * Returns the matched LinkItem if found, or null otherwise.
+ */
+export function checkForDuplicateLink(content: string, currentLinks: LinkItem[], excludeId?: string): LinkItem | null {
+  if (!content) return null;
+  const target = normalizeUrl(content);
+  if (!target) return null;
+
+  for (const link of currentLinks) {
+    if (excludeId && link.ID === excludeId) continue;
+    if (normalizeUrl(link.Content) === target) {
+      return link;
+    }
+  }
+  
+  return null;
+}
+
 
