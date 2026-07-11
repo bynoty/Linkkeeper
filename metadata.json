@@ -1,0 +1,6 @@
+{
+  "name": "Personal Knowledge & Link Keeper",
+  "description": "A secure personal dashboard to save and organize links, notes, and login credentials using local state, LocalStorage, and an optional Google Sheets backend.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

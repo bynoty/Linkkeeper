@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <script>
+      // Compatibility patch for environments (like sandboxed iframes) where window.fetch has only a getter
+      try {
+        if (window.fetch && !Object.getOwnPropertyDescriptor(window, 'fetch')?.set) {
+          const originalFetch = window.fetch;
+          let currentFetch = originalFetch;
+          Object.defineProperty(window, 'fetch', {
+            get() {
+              return currentFetch;
+            },
+            set(val) {
+              currentFetch = val;
+            },
+            configurable: true,
+            enumerable: true
+          });
+        }
+      } catch (e) {
+        console.warn('Compatibility patch for window.fetch failed:', e);
+      }
+    </script>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Personal Knowledge & Link Keeper</title>
+    
+    <!-- PWA Settings -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#059669" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <link rel="apple-touch-icon" href="https://img.icons8.com/fluency/192/safe-key.png" />
+    
+    <!-- Tab Favicon -->
+    <link rel="icon" type="image/png" href="https://img.icons8.com/fluency/192/safe-key.png" />
+    
+    <meta name="description" content="Secure personal knowledge manager to store links, bookmarks, formatted notes, and encrypted login passwords in a personal dashboard with Google Sheets cloud synchronization." />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Service Worker Registration -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/service-worker.js')
+            .then((registration) => {
+              console.log('PWA ServiceWorker registered successfully with scope: ', registration.scope);
+            })
+            .catch((error) => {
+              console.warn('PWA ServiceWorker registration failed: ', error);
+            });
+        });
+      }
+    </script>
+  </body>
+</html>
