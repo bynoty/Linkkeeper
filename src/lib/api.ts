@@ -18,6 +18,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   categories: ['Work', 'Personal', 'Education', 'Reference', 'Finance', 'Social', 'Entertainment'],
   theme: 'light',
   syncOnLoad: false,
+  googleSyncEnabled: false,
+  googleSpreadsheetId: '',
 };
 
 /**

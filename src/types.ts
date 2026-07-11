@@ -33,6 +33,8 @@ export interface AppSettings {
   theme: 'light' | 'dark';
   syncOnLoad: boolean;
   masterPasswordHash?: string; // Optional client-side verification
+  googleSyncEnabled?: boolean; // Whether direct Google Sheets sync via OAuth is enabled
+  googleSpreadsheetId?: string; // Spreadsheet ID in Google Drive
 }
 
 export type ActiveTab = 'dashboard' | 'vault' | 'quick-add' | 'settings';

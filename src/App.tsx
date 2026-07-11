@@ -3,6 +3,22 @@
  */
 
 import React, { useState, useEffect, useTransition, useRef } from 'react';
+import { User } from 'firebase/auth';
+import { 
+  initAuth, 
+  googleSignIn, 
+  logout as googleLogout 
+} from './lib/googleAuthService';
+import { 
+  findSpreadsheet, 
+  createSpreadsheet, 
+  initializeSpreadsheetStructure, 
+  fetchLinksFromSheet, 
+  fetchVaultFromSheet, 
+  saveLinksToSheet, 
+  saveVaultToSheet,
+  mergeArrays
+} from './lib/googleSheetsService';
 import { 
   getLinks, 
   saveLink, 
@@ -55,6 +71,39 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+
+  // Google Auth states
+  const [user, setUser] = useState<User | null>(null);
+  const [googleToken, setGoogleToken] = useState<string | null>(null);
+
+  // Initialize Auth state listener
+  useEffect(() => {
+    const unsubscribe = initAuth(
+      async (firebaseUser, token) => {
+        setUser(firebaseUser);
+        setGoogleToken(token);
+        
+        // If Google Sheets Sync is enabled and we have a spreadsheet ID, trigger an automatic sync
+        const currentSettings = loadSettings();
+        if (currentSettings.googleSyncEnabled && currentSettings.googleSpreadsheetId) {
+          setTimeout(async () => {
+            try {
+              await handleGoogleSheetsSync(token, currentSettings.googleSpreadsheetId!, currentSettings);
+            } catch (e) {
+              console.error('Auto-sync on load failed:', e);
+            }
+          }, 200);
+        }
+      },
+      () => {
+        setUser(null);
+        setGoogleToken(null);
+      }
+    );
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
 
   // Load Settings and Local/Sheets data on start
   useEffect(() => {
@@ -198,19 +247,144 @@ export default function App() {
     }
   };
 
+  // Trigger a full direct Google Sheet synchronization
+  const handleGoogleSheetsSync = async (token: string, spreadsheetId: string, currentSettings: AppSettings) => {
+    setIsLoading(true);
+    try {
+      showToast('Syncing with Google Drive...', 'info');
+
+      // 1. Fetch remote data
+      const remoteLinks = await fetchLinksFromSheet(token, spreadsheetId);
+      const remoteVault = await fetchVaultFromSheet(token, spreadsheetId);
+
+      // 2. Load current local cache
+      const localDataLinks = localStorage.getItem('link_keeper_links');
+      const localLinks: LinkItem[] = localDataLinks ? JSON.parse(localDataLinks) : [];
+
+      const localDataVault = localStorage.getItem('link_keeper_vault');
+      const localVault: VaultItem[] = localDataVault ? JSON.parse(localDataVault) : [];
+
+      // 3. Merge
+      const mergedLinks = mergeArrays(localLinks, remoteLinks);
+      const mergedVault = mergeArrays(localVault, remoteVault);
+
+      // 4. Update state & local storage cache
+      setLinks(mergedLinks);
+      setVaultItems(mergedVault);
+      localStorage.setItem('link_keeper_links', JSON.stringify(mergedLinks));
+      localStorage.setItem('link_keeper_vault', JSON.stringify(mergedVault));
+
+      // 5. Write merged data back to Google Sheet
+      await saveLinksToSheet(token, spreadsheetId, mergedLinks);
+      await saveVaultToSheet(token, spreadsheetId, mergedVault);
+
+      showToast('Google Drive sync successful!', 'success');
+    } catch (err) {
+      console.error('Google Sheets direct sync failed:', err);
+      showToast(`Drive Sync Failed: ${(err as Error).message}`, 'error');
+      throw err;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSetupGoogleSheet = async (token?: string) => {
+    const activeToken = token || googleToken;
+    if (!activeToken) {
+      showToast('Please sign in with Google first', 'error');
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      showToast('Connecting to Google Drive...', 'info');
+      let spreadsheetId = await findSpreadsheet(activeToken);
+
+      if (!spreadsheetId) {
+        showToast('Creating new Google Sheet for LinkKeeper...', 'info');
+        spreadsheetId = await createSpreadsheet(activeToken);
+        showToast('Google Sheet created successfully!', 'success');
+      } else {
+        showToast('Found existing LinkKeeper spreadsheet. Initializing structures...', 'info');
+        await initializeSpreadsheetStructure(activeToken, spreadsheetId);
+        showToast('Google Sheet loaded successfully!', 'success');
+      }
+
+      const updatedSettings = {
+        ...settings,
+        googleSyncEnabled: true,
+        googleSpreadsheetId: spreadsheetId,
+      };
+      setSettings(updatedSettings);
+      saveSettings(updatedSettings);
+
+      // Trigger sync
+      await handleGoogleSheetsSync(activeToken, spreadsheetId, updatedSettings);
+
+    } catch (err) {
+      console.error('Setup Google Sheet failed:', err);
+      showToast(`Connection failed: ${(err as Error).message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleSignIn = async () => {
+    setIsLoading(true);
+    try {
+      const res = await googleSignIn();
+      if (res) {
+        setUser(res.user);
+        setGoogleToken(res.accessToken);
+        showToast(`Successfully logged in as ${res.user.email}!`, 'success');
+
+        // Automate spreadsheet connection if sync is already requested or enabled
+        await handleSetupGoogleSheet(res.accessToken);
+      }
+    } catch (err) {
+      showToast(`Sign-in failed: ${(err as Error).message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleGoogleLogout = async () => {
+    setIsLoading(true);
+    try {
+      await googleLogout();
+      setUser(null);
+      setGoogleToken(null);
+      
+      const updatedSettings = {
+        ...settings,
+        googleSyncEnabled: false,
+      };
+      setSettings(updatedSettings);
+      saveSettings(updatedSettings);
+      
+      showToast('Logged out of Google account and disabled Google Sheets Sync', 'info');
+    } catch (err) {
+      showToast(`Logout failed: ${(err as Error).message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Link Crud Ops
   const handleSaveLink = async (item: Partial<LinkItem>, isNew: boolean) => {
     setIsLoading(true);
     try {
       const saved = await saveLink(settings, item, isNew);
-      // Refresh local list state
+      let nextLinks: LinkItem[] = [];
       setLinks(prev => {
-        if (isNew) {
-          return [saved, ...prev];
-        } else {
-          return prev.map(l => (l.ID === saved.ID ? saved : l));
-        }
+        const list = isNew ? [saved, ...prev] : prev.map(l => (l.ID === saved.ID ? saved : l));
+        nextLinks = list;
+        return list;
       });
+
+      if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
+        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+      }
     } catch (err) {
       showToast(`Save failed: ${(err as Error).message}`, 'error');
       throw err;
@@ -223,7 +397,16 @@ export default function App() {
     setIsLoading(true);
     try {
       await deleteLink(settings, id);
-      setLinks(prev => prev.filter(l => l.ID !== id));
+      let nextLinks: LinkItem[] = [];
+      setLinks(prev => {
+        const list = prev.filter(l => l.ID !== id);
+        nextLinks = list;
+        return list;
+      });
+
+      if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
+        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+      }
     } catch (err) {
       showToast(`Delete failed: ${(err as Error).message}`, 'error');
       throw err;
@@ -237,13 +420,16 @@ export default function App() {
     setIsLoading(true);
     try {
       const saved = await saveVault(settings, item, isNew);
+      let nextVault: VaultItem[] = [];
       setVaultItems(prev => {
-        if (isNew) {
-          return [saved, ...prev];
-        } else {
-          return prev.map(c => (c.ID === saved.ID ? saved : c));
-        }
+        const list = isNew ? [saved, ...prev] : prev.map(c => (c.ID === saved.ID ? saved : c));
+        nextVault = list;
+        return list;
       });
+
+      if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
+        await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
+      }
     } catch (err) {
       showToast(`Credential save failed: ${(err as Error).message}`, 'error');
       throw err;
@@ -256,7 +442,16 @@ export default function App() {
     setIsLoading(true);
     try {
       await deleteVault(settings, id);
-      setVaultItems(prev => prev.filter(c => c.ID !== id));
+      let nextVault: VaultItem[] = [];
+      setVaultItems(prev => {
+        const list = prev.filter(c => c.ID !== id);
+        nextVault = list;
+        return list;
+      });
+
+      if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
+        await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
+      }
     } catch (err) {
       showToast(`Credential deletion failed: ${(err as Error).message}`, 'error');
       throw err;
@@ -420,7 +615,12 @@ export default function App() {
           <div className="flex items-center gap-2 md:gap-3 shrink-0">
             {/* Sync Database Status Badge */}
             <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-zinc-200/50 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 text-[10px] font-semibold text-zinc-500 dark:text-zinc-400">
-              {settings.webAppUrl ? (
+              {settings.googleSyncEnabled && user ? (
+                <>
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+                  <span>Google Drive Direct Sync</span>
+                </>
+              ) : settings.webAppUrl ? (
                 <>
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
                   <span>Google Sheets Sync</span>
@@ -434,9 +634,15 @@ export default function App() {
             </div>
 
             {/* Manual Sync Trigger */}
-            {settings.webAppUrl && (
+            {(((settings.googleSyncEnabled && user && googleToken && settings.googleSpreadsheetId)) || settings.webAppUrl) && (
               <button
-                onClick={handleSync}
+                onClick={async () => {
+                  if (settings.googleSyncEnabled && googleToken && settings.googleSpreadsheetId) {
+                    await handleGoogleSheetsSync(googleToken, settings.googleSpreadsheetId, settings);
+                  } else {
+                    await handleSync();
+                  }
+                }}
                 disabled={isLoading}
                 className="p-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-xl transition-all cursor-pointer disabled:opacity-50"
                 title="Sync Spreadsheet Database"
@@ -570,6 +776,12 @@ export default function App() {
               onImportVaultItems={handleImportVaultItems}
               onShowToast={showToast}
               onSync={handleSync}
+              googleUser={user}
+              googleToken={googleToken}
+              onGoogleSignIn={handleGoogleSignIn}
+              onGoogleLogout={handleGoogleLogout}
+              onSetupGoogleSheet={handleSetupGoogleSheet}
+              onGoogleSheetsSync={handleGoogleSheetsSync}
             />
           )}
         </main>
