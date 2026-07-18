@@ -3,11 +3,32 @@ import { LinkItem, VaultItem } from '../types';
 const SPREADSHEET_NAME = 'LinkKeeper Spreadsheet Database';
 
 /**
- * Helper to fetch Google API endpoints through our backend proxy to bypass client-side CORS and iframe sandbox restrictions.
+ * Helper to fetch Google API endpoints. It attempts direct calls first (perfect for Vercel / production browsers)
+ * and falls back to our backend proxy if blocked by iframe sandboxes or local CORS limitations.
  */
 async function googleFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  const proxyUrl = `/api/google-proxy?url=${encodeURIComponent(url)}`;
-  return fetch(proxyUrl, options);
+  try {
+    // Attempt direct call first
+    const directResponse = await fetch(url, options);
+    return directResponse;
+  } catch (directError) {
+    console.warn("Direct Google API fetch failed, trying proxy fallback:", directError);
+    
+    // Fall back to backend proxy in case of network/CORS error inside sandboxed iframe
+    const proxyUrl = `/api/google-proxy?url=${encodeURIComponent(url)}`;
+    try {
+      const proxyResponse = await fetch(proxyUrl, options);
+      if (proxyResponse.status === 404) {
+        // If the proxy is not found (404), it means we are in a static hosting environment like Vercel,
+        // so we must bubble up the original direct call error.
+        throw directError;
+      }
+      return proxyResponse;
+    } catch (proxyError) {
+      // If both failed, propagate the original error
+      throw directError;
+    }
+  }
 }
 
 /**

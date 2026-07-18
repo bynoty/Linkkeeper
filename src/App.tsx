@@ -57,7 +57,9 @@ import {
   CloudLightning,
   LogOut,
   Sparkles,
-  User as UserIcon
+  User as UserIcon,
+  Wifi,
+  WifiOff
 } from 'lucide-react';
 
 export default function App() {
@@ -95,6 +97,76 @@ export default function App() {
       return null;
     }
   });
+
+  // Online/Offline Network & Sync Queue state
+  const [isOnline, setIsOnline] = useState<boolean>(() => typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [syncPending, setSyncPending] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('link_keeper_sync_pending') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  // Persist syncPending state
+  useEffect(() => {
+    try {
+      localStorage.setItem('link_keeper_sync_pending', String(syncPending));
+    } catch (err) {
+      console.error('Failed to save sync pending state to localStorage:', err);
+    }
+  }, [syncPending]);
+
+  // Monitor network online/offline events
+  useEffect(() => {
+    const handleOnline = () => {
+      setIsOnline(true);
+      showToast('You are back online!', 'success');
+    };
+
+    const handleOffline = () => {
+      setIsOnline(false);
+      showToast('You are offline. Changes will be saved locally and queued for synchronization.', 'info');
+    };
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+
+  // Automatically trigger sync when coming online if sync is pending
+  useEffect(() => {
+    if (isOnline && syncPending) {
+      const runQueuedSync = async () => {
+        if (settings.googleSyncEnabled && googleToken && settings.googleSpreadsheetId) {
+          showToast('Connection restored! Synchronizing queued changes with Google Sheets...', 'info');
+          try {
+            await handleGoogleSheetsSync(googleToken, settings.googleSpreadsheetId, settings);
+            setSyncPending(false);
+          } catch (err) {
+            console.error('Auto-sync on reconnect failed:', err);
+          }
+        } else if (settings.webAppUrl) {
+          showToast('Connection restored! Synchronizing queued changes with Google Sheets...', 'info');
+          try {
+            await handleSync();
+            setSyncPending(false);
+          } catch (err) {
+            console.error('Auto-sync on reconnect failed:', err);
+          }
+        } else {
+          // No sync configured but state was set, clear it
+          setSyncPending(false);
+        }
+      };
+
+      runQueuedSync();
+    }
+  }, [isOnline, syncPending, googleToken, settings]);
 
   const addSyncLog = (msg: string) => {
     const timestamp = new Date().toLocaleTimeString();
@@ -470,10 +542,16 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        try {
-          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
-        } catch (syncErr) {
-          handleGoogleError(syncErr, 'save link');
+        if (!isOnline) {
+          setSyncPending(true);
+          showToast('Offline: Changes saved locally. Synchronization queued.', 'info');
+        } else {
+          try {
+            await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+          } catch (syncErr) {
+            handleGoogleError(syncErr, 'save link');
+            setSyncPending(true);
+          }
         }
       }
     } catch (err) {
@@ -496,10 +574,16 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        try {
-          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
-        } catch (syncErr) {
-          handleGoogleError(syncErr, 'delete link');
+        if (!isOnline) {
+          setSyncPending(true);
+          showToast('Offline: Link deleted locally. Synchronization queued.', 'info');
+        } else {
+          try {
+            await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+          } catch (syncErr) {
+            handleGoogleError(syncErr, 'delete link');
+            setSyncPending(true);
+          }
         }
       }
     } catch (err) {
@@ -526,10 +610,16 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        try {
-          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
-        } catch (syncErr) {
-          handleGoogleError(syncErr, 'bulk delete links');
+        if (!isOnline) {
+          setSyncPending(true);
+          showToast('Offline: Links deleted locally. Synchronization queued.', 'info');
+        } else {
+          try {
+            await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+          } catch (syncErr) {
+            handleGoogleError(syncErr, 'bulk delete links');
+            setSyncPending(true);
+          }
         }
       }
       showToast(`Successfully deleted ${ids.length} links`, 'success');
@@ -559,10 +649,16 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        try {
-          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
-        } catch (syncErr) {
-          handleGoogleError(syncErr, 'bulk move links');
+        if (!isOnline) {
+          setSyncPending(true);
+          showToast('Offline: Links moved locally. Synchronization queued.', 'info');
+        } else {
+          try {
+            await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+          } catch (syncErr) {
+            handleGoogleError(syncErr, 'bulk move links');
+            setSyncPending(true);
+          }
         }
       }
       showToast(`Successfully moved ${ids.length} links to ${newCategory}`, 'success');
@@ -587,10 +683,16 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        try {
-          await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
-        } catch (syncErr) {
-          handleGoogleError(syncErr, 'save credential');
+        if (!isOnline) {
+          setSyncPending(true);
+          showToast('Offline: Vault changes saved locally. Synchronization queued.', 'info');
+        } else {
+          try {
+            await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
+          } catch (syncErr) {
+            handleGoogleError(syncErr, 'save credential');
+            setSyncPending(true);
+          }
         }
       }
     } catch (err) {
@@ -613,10 +715,16 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        try {
-          await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
-        } catch (syncErr) {
-          handleGoogleError(syncErr, 'delete credential');
+        if (!isOnline) {
+          setSyncPending(true);
+          showToast('Offline: Credential deleted locally. Synchronization queued.', 'info');
+        } else {
+          try {
+            await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
+          } catch (syncErr) {
+            handleGoogleError(syncErr, 'delete credential');
+            setSyncPending(true);
+          }
         }
       }
     } catch (err) {
@@ -715,11 +823,17 @@ export default function App() {
 
       // If Google sync is active, upload the bulk-merged list
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        showToast('Uploading imported bookmarks to Google Sheets...', 'info');
-        try {
-          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, mergedLinks);
-        } catch (syncErr) {
-          handleGoogleError(syncErr, 'upload bookmarks');
+        if (!isOnline) {
+          setSyncPending(true);
+          showToast('Offline: Bookmarks imported locally. Synchronization queued.', 'info');
+        } else {
+          showToast('Uploading imported bookmarks to Google Sheets...', 'info');
+          try {
+            await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, mergedLinks);
+          } catch (syncErr) {
+            handleGoogleError(syncErr, 'upload bookmarks');
+            setSyncPending(true);
+          }
         }
       }
 
@@ -904,6 +1018,11 @@ export default function App() {
             {(((settings.googleSyncEnabled && user && googleToken && settings.googleSpreadsheetId)) || settings.webAppUrl) && (
               <button
                 onClick={async () => {
+                  if (!isOnline) {
+                    setSyncPending(true);
+                    showToast('Offline: Sync queued and will run automatically when connection returns.', 'info');
+                    return;
+                  }
                   if (settings.googleSyncEnabled && googleToken && settings.googleSpreadsheetId) {
                     await handleGoogleSheetsSync(googleToken, settings.googleSpreadsheetId, settings);
                   } else {
@@ -917,6 +1036,34 @@ export default function App() {
                 <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
             )}
+
+            {/* Online/Offline Network Status Indicator */}
+            <div 
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold border transition-all ${
+                isOnline 
+                  ? 'bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-500/10' 
+                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 animate-pulse'
+              }`}
+              title={isOnline ? (syncPending ? 'Online. Unsynchronized changes are queued!' : 'Online') : 'Offline. Changes will be queued and synced when connection returns.'}
+            >
+              {isOnline ? (
+                <>
+                  <Wifi className="w-3.5 h-3.5 text-emerald-500" />
+                  <span className="hidden sm:inline">Online</span>
+                  {syncPending && (
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
+                  )}
+                </>
+              ) : (
+                <>
+                  <WifiOff className="w-3.5 h-3.5 text-amber-500" />
+                  <span>Offline</span>
+                  {syncPending && (
+                    <span className="inline-flex items-center bg-amber-500/20 px-1 rounded text-[8px] ml-0.5">Queued</span>
+                  )}
+                </>
+              )}
+            </div>
 
             {/* Dark Mode Toggle */}
             <button
