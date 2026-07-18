@@ -59,7 +59,8 @@ import {
   Sparkles,
   User as UserIcon,
   Wifi,
-  WifiOff
+  WifiOff,
+  HelpCircle
 } from 'lucide-react';
 
 export default function App() {
@@ -76,6 +77,7 @@ export default function App() {
   const [searchTerm, setSearchTerm] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
+  const [showHelpModal, setShowHelpModal] = useState(false);
 
   // Google Auth states
   const [user, setUser] = useState<User | null>(null);
@@ -273,6 +275,12 @@ export default function App() {
           searchInputRef.current?.blur();
           showToast('Search cleared (Esc)', 'info');
         }
+      }
+
+      // 4. '?': Toggle help modal (when not typing in an input)
+      if (!isInputFocused && e.key === '?') {
+        e.preventDefault();
+        setShowHelpModal(prev => !prev);
       }
     };
 
@@ -1074,6 +1082,15 @@ export default function App() {
               {settings.theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
 
+            {/* Keyboard Shortcuts & Help Button */}
+            <button
+              onClick={() => setShowHelpModal(true)}
+              className="p-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-xl transition-all cursor-pointer"
+              title="Keyboard Shortcuts Help (?)"
+            >
+              <HelpCircle className="w-4 h-4" />
+            </button>
+
             {/* Quick Settings Switch */}
             <button
               onClick={() => startTransition(() => setActiveTab('settings'))}
@@ -1212,6 +1229,91 @@ export default function App() {
         </main>
 
       </div>
+
+      {/* Keyboard Shortcuts Help Modal */}
+      {showHelpModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/60 backdrop-blur-xs animate-fade-in"
+          onClick={() => setShowHelpModal(false)}
+        >
+          <div 
+            className="bg-white dark:bg-zinc-900 w-full max-w-md rounded-3xl border border-zinc-200 dark:border-zinc-800 p-6 shadow-xl relative animate-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Close Button */}
+            <button 
+              onClick={() => setShowHelpModal(false)}
+              className="absolute top-4 right-4 p-1.5 rounded-xl hover:bg-zinc-150 dark:hover:bg-zinc-800 text-zinc-500 dark:text-zinc-400 cursor-pointer transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-5">
+              <div className="w-9 h-9 bg-emerald-100 dark:bg-emerald-950/50 rounded-xl flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                <HelpCircle className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-zinc-900 dark:text-white">Keyboard Shortcuts & Help</h3>
+                <p className="text-[10px] text-zinc-500 dark:text-zinc-400">Boost your productivity with global hotkeys</p>
+              </div>
+            </div>
+
+            {/* Shortcut List */}
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <h4 className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider">Global Shortcuts</h4>
+                
+                <div className="flex items-center justify-between text-xs py-1.5 border-b border-zinc-100 dark:border-zinc-800/50">
+                  <span className="text-zinc-600 dark:text-zinc-300 font-medium">Show / Hide Help Menu</span>
+                  <kbd className="px-2 py-1 text-[10px] font-bold bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-xs text-zinc-800 dark:text-zinc-200 font-mono">?</kbd>
+                </div>
+
+                <div className="flex items-center justify-between text-xs py-1.5 border-b border-zinc-100 dark:border-zinc-800/50">
+                  <span className="text-zinc-600 dark:text-zinc-300 font-medium">Focus Search Input</span>
+                  <div className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-1 text-[10px] font-bold bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-xs text-zinc-800 dark:text-zinc-200 font-mono">Ctrl</kbd>
+                    <span className="text-zinc-400">+</span>
+                    <kbd className="px-2 py-1 text-[10px] font-bold bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-xs text-zinc-800 dark:text-zinc-200 font-mono">K</kbd>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs py-1.5 border-b border-zinc-100 dark:border-zinc-800/50">
+                  <span className="text-zinc-600 dark:text-zinc-300 font-medium">Go to Quick Add Tab</span>
+                  <div className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-1 text-[10px] font-bold bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-xs text-zinc-800 dark:text-zinc-200 font-mono">Ctrl</kbd>
+                    <span className="text-zinc-400">+</span>
+                    <kbd className="px-2 py-1 text-[10px] font-bold bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-xs text-zinc-800 dark:text-zinc-200 font-mono">N</kbd>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between text-xs py-1.5 border-b border-zinc-100 dark:border-zinc-800/50">
+                  <span className="text-zinc-600 dark:text-zinc-300 font-medium">Clear Search / Remove Focus</span>
+                  <kbd className="px-2 py-1 text-[10px] font-bold bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 rounded-md shadow-xs text-zinc-800 dark:text-zinc-200 font-mono">Esc</kbd>
+                </div>
+              </div>
+
+              {/* General Tips */}
+              <div className="bg-zinc-50 dark:bg-zinc-900/40 border border-zinc-100 dark:border-zinc-800/50 rounded-2xl p-3.5 space-y-1.5">
+                <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider font-mono">Quick Pro-Tips</h4>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  • <strong>Bulk Mode</strong>: In Dashboard, hold Ctrl or turn on the Multi-Select toggle to batch edit or delete bookmarks.
+                </p>
+                <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                  • <strong>QR Code Quick-Add</strong>: Use your mobile device camera inside the <strong className="text-emerald-600 dark:text-emerald-400">Quick Add</strong> tab to scan QR codes for fast link collection.
+                </p>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => setShowHelpModal(false)}
+              className="mt-5 w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-2 rounded-xl text-xs transition-colors cursor-pointer"
+            >
+              Got it!
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Global Toast Overlay Notifications */}
       <div 

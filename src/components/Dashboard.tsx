@@ -22,9 +22,16 @@ import {
   Download,
   FolderInput,
   Sparkles,
-  ShieldAlert
+  ShieldAlert,
+  LayoutGrid,
+  List,
+  ChevronRight,
+  ChevronDown,
+  Globe,
+  Router
 } from 'lucide-react';
 import { suggestCategoryFromUrl, checkForDuplicateLink } from '../lib/api';
+import { VirtualItem } from './VirtualItem';
 
 interface DashboardProps {
   links: LinkItem[];
@@ -74,6 +81,20 @@ export default function Dashboard({
 
   // Performance Optimization: Paginate list to avoid heavy DOM on mobile
   const [visibleCount, setVisibleCount] = useState(15);
+
+  // View Mode: Grid (original) or List (mobile-friendly compact list inspired by user request)
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    const saved = localStorage.getItem('dashboard_view_mode');
+    return (saved === 'grid' || saved === 'list') ? saved : 'grid';
+  });
+  const [expandedLinkIds, setExpandedLinkIds] = useState<string[]>([]);
+
+  const toggleExpandLink = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedLinkIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
 
   // Reset pagination limit when active filters change
   React.useEffect(() => {
@@ -525,6 +546,89 @@ export default function Dashboard({
                   <option value="favorited">Favorited First</option>
                 </select>
               </div>
+
+              {/* Category Filter Dropdown */}
+              <div className="flex items-center gap-2">
+                <label htmlFor="dashboard-category-filter" className="text-xs font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+                  Category:
+                </label>
+                <select
+                  id="dashboard-category-filter"
+                  value={selectedCategories.length === 0 ? '' : selectedCategories.length === 1 ? selectedCategories[0] : 'multiple'}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '') {
+                      setSelectedCategories([]);
+                    } else if (val !== 'multiple') {
+                      setSelectedCategories([val]);
+                    }
+                  }}
+                  className="text-xs font-medium bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden cursor-pointer"
+                >
+                  <option value="">All Categories</option>
+                  {categories.map(cat => (
+                    <option key={cat} value={cat}>{cat}</option>
+                  ))}
+                  {selectedCategories.length > 1 && (
+                    <option value="multiple" disabled>Multiple ({selectedCategories.length})</option>
+                  )}
+                </select>
+              </div>
+
+              {/* Tag Filter Dropdown */}
+              <div className="flex items-center gap-2">
+                <label htmlFor="dashboard-tag-filter" className="text-xs font-medium text-zinc-500 dark:text-zinc-400 whitespace-nowrap">
+                  Tag:
+                </label>
+                <select
+                  id="dashboard-tag-filter"
+                  value={selectedTag || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedTag(val === '' ? null : val);
+                  }}
+                  className="text-xs font-medium bg-zinc-50 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border border-zinc-200 dark:border-zinc-800 rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden cursor-pointer"
+                >
+                  <option value="">All Tags</option>
+                  {allTags.map(tag => (
+                    <option key={tag} value={tag}>#{tag}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* View Toggle (Grid / List) */}
+              <div className="flex items-center bg-zinc-100 dark:bg-zinc-800 p-1 rounded-xl border border-zinc-200/50 dark:border-zinc-800/50">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('grid');
+                    localStorage.setItem('dashboard_view_mode', 'grid');
+                  }}
+                  className={`p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                    viewMode === 'grid'
+                      ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                      : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                  }`}
+                  title="Grid View (รูปแบบตาราง)"
+                >
+                  <LayoutGrid className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setViewMode('list');
+                    localStorage.setItem('dashboard_view_mode', 'list');
+                  }}
+                  className={`p-1.5 rounded-lg transition-all cursor-pointer flex items-center justify-center ${
+                    viewMode === 'list'
+                      ? 'bg-white dark:bg-zinc-700 text-emerald-600 dark:text-emerald-400 shadow-xs'
+                      : 'text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
+                  }`}
+                  title="List View (รูปแบบรายการ)"
+                >
+                  <List className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -642,200 +746,427 @@ export default function Dashboard({
               )}
             </div>
           ) : (
-            /* Grid layout for Link Items */
+            /* Grid or List layout for Link Items */
             <div className="space-y-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {filteredLinks.slice(0, visibleCount).map(link => {
-                  const containsLink = isUrl(link.Content);
-                  const isSelected = selectedLinkIds.includes(link.ID);
-                  return (
-                    <div 
-                      key={link.ID}
-                      onClick={() => {
-                        if (isBulkMode) {
-                          handleCardClick(link.ID);
-                        }
-                      }}
-                      className={`group relative bg-white dark:bg-zinc-900 rounded-2xl border transition-all duration-300 flex flex-col justify-between overflow-hidden ${
-                        isBulkMode ? 'cursor-pointer select-none' : ''
-                      } ${
-                        isSelected
-                          ? 'ring-2 ring-emerald-500 border-emerald-500/50 dark:border-emerald-500 bg-emerald-50/5 dark:bg-emerald-950/5'
-                          : link.Pinned 
-                            ? 'border-emerald-500/50 dark:border-emerald-500/40 bg-linear-to-br from-emerald-50/10 to-transparent' 
-                            : 'border-zinc-200/70 dark:border-zinc-800'
-                      } hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700`}
-                    >
-                      {/* Bulk Selection Checkbox Overlay */}
-                      {isBulkMode && (
-                        <div className="absolute top-4 left-4 z-10">
-                          {isSelected ? (
-                            <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs border border-emerald-600 animate-in zoom-in-50 duration-150">
-                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+              {viewMode === 'grid' ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {filteredLinks.slice(0, visibleCount).map(link => {
+                    const containsLink = isUrl(link.Content);
+                    const isSelected = selectedLinkIds.includes(link.ID);
+                    return (
+                      <VirtualItem key={link.ID} estimatedHeight={185}>
+                        <div 
+                          onClick={() => {
+                            if (isBulkMode) {
+                              handleCardClick(link.ID);
+                            }
+                          }}
+                          className={`group relative bg-white dark:bg-zinc-900 rounded-2xl border transition-all duration-300 flex flex-col justify-between overflow-hidden ${
+                            isBulkMode ? 'cursor-pointer select-none' : ''
+                          } ${
+                            isSelected
+                              ? 'ring-2 ring-emerald-500 border-emerald-500/50 dark:border-emerald-500 bg-emerald-50/5 dark:bg-emerald-950/5'
+                              : link.Pinned 
+                                ? 'border-emerald-500/50 dark:border-emerald-500/40 bg-linear-to-br from-emerald-50/10 to-transparent' 
+                                : 'border-zinc-200/70 dark:border-zinc-800'
+                          } hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700`}
+                        >
+                        {/* Bulk Selection Checkbox Overlay */}
+                        {isBulkMode && (
+                          <div className="absolute top-4 left-4 z-10">
+                            {isSelected ? (
+                              <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs border border-emerald-600 animate-in zoom-in-50 duration-150">
+                                <Check className="w-3.5 h-3.5 stroke-[3]" />
+                              </div>
+                            ) : (
+                              <div className="w-5 h-5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 group-hover:border-emerald-500 transition-colors" />
+                            )}
+                          </div>
+                        )}
+                        
+                        {/* Header */}
+                        <div className={`p-5 space-y-2 ${isBulkMode ? 'pl-12' : ''}`}>
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="space-y-1 max-w-[80%] text-left">
+                              <h4 className="font-semibold text-zinc-900 dark:text-white leading-tight break-words group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                                {link.Title}
+                              </h4>
+                              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-sm">
+                                {link.Category}
+                              </span>
                             </div>
-                          ) : (
-                            <div className="w-5 h-5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 group-hover:border-emerald-500 transition-colors" />
+                            
+                            {/* Action pins */}
+                            {!isBulkMode && (
+                              <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  onClick={(e) => handleTogglePin(link, e)}
+                                  className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
+                                    link.Pinned ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
+                                  }`}
+                                  title={link.Pinned ? 'Unpin' : 'Pin to top'}
+                                >
+                                  <Pin className={`w-4 h-4 ${link.Pinned ? 'fill-emerald-600 dark:fill-emerald-400' : ''}`} />
+                                </button>
+                                <button
+                                  onClick={(e) => handleToggleFavorite(link, e)}
+                                  className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
+                                    link.Favorite ? 'text-amber-500' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
+                                  }`}
+                                  title={link.Favorite ? 'Unfavorite' : 'Add to favorites'}
+                                >
+                                  <Star className={`w-4 h-4 ${link.Favorite ? 'fill-amber-500' : ''}`} />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+    
+                          {/* Content Section (URL or Text Note) */}
+                          <div className="pt-1.5">
+                            {containsLink ? (
+                              <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-800/40 p-2 rounded-xl border border-zinc-100 dark:border-zinc-800/30">
+                                <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate flex-1 block">
+                                  {link.Content}
+                                </span>
+                                {!isBulkMode && (
+                                  <div className="flex gap-1 shrink-0">
+                                    <button 
+                                      onClick={() => handleCopy(link.Content, 'URL')}
+                                      className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all cursor-pointer"
+                                      title="Copy Link"
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                    <a 
+                                      href={getFullUrl(link.Content)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all"
+                                      title="Open Link"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </a>
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap bg-zinc-50 dark:bg-zinc-800/40 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30 max-h-36 overflow-y-auto">
+                                {link.Content}
+                              </p>
+                            )}
+                          </div>
+    
+                          {/* Note / Description if exists */}
+                          {link.Note && (
+                            <p className="text-xs text-zinc-500 dark:text-zinc-400 italic bg-amber-50/20 dark:bg-zinc-900 p-2 rounded-lg border border-amber-500/10 text-left">
+                              {link.Note}
+                            </p>
+                          )}
+    
+                          {/* Tags display */}
+                          {link.Tags && (
+                            <div className="flex flex-wrap gap-1 pt-1.5">
+                              {link.Tags.split(',').map(tag => {
+                                const trimmed = tag.trim();
+                                if (!trimmed) return null;
+                                const isFilteringByThisTag = selectedTag?.toLowerCase() === trimmed.toLowerCase();
+                                return (
+                                  <button
+                                    key={trimmed}
+                                    disabled={isBulkMode}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setSelectedTag(isFilteringByThisTag ? null : trimmed);
+                                    }}
+                                    className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${
+                                      isBulkMode ? 'cursor-default' : 'cursor-pointer'
+                                    } ${
+                                      isFilteringByThisTag
+                                        ? 'bg-amber-500 text-white border border-transparent'
+                                        : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 border border-zinc-200/10'
+                                    }`}
+                                  >
+                                    #{trimmed}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           )}
                         </div>
-                      )}
-                      
-                      {/* Header */}
-                      <div className={`p-5 space-y-2 ${isBulkMode ? 'pl-12' : ''}`}>
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="space-y-1 max-w-[80%]">
-                            <h4 className="font-semibold text-zinc-900 dark:text-white leading-tight break-words group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                              {link.Title}
-                            </h4>
-                            <span className="inline-block text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-sm">
-                              {link.Category}
-                            </span>
+    
+                        {/* Footer Row */}
+                        <div className="px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-4">
+                          <div className="flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
+                            <Calendar className="w-3 h-3" />
+                            <span>{new Date(link.CreatedAt).toLocaleDateString()}</span>
                           </div>
                           
-                          {/* Action pins */}
-                          {!isBulkMode && (
-                            <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
+                          {!isBulkMode ? (
+                            <div className="flex items-center gap-2">
+                              {/* Copy Content Button */}
                               <button
-                                onClick={(e) => handleTogglePin(link, e)}
-                                className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
-                                  link.Pinned ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
-                                }`}
-                                title={link.Pinned ? 'Unpin' : 'Pin to top'}
+                                onClick={() => handleCopy(link.Content, 'Content')}
+                                className="px-2 py-1 rounded-md text-[11px] font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Copy Full Content"
                               >
-                                <Pin className={`w-4 h-4 ${link.Pinned ? 'fill-emerald-600 dark:fill-emerald-400' : ''}`} />
+                                <Copy className="w-3.5 h-3.5" /> Copy
                               </button>
+    
+                              {/* Edit Button */}
                               <button
-                                onClick={(e) => handleToggleFavorite(link, e)}
-                                className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
-                                  link.Favorite ? 'text-amber-500' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
-                                }`}
-                                title={link.Favorite ? 'Unfavorite' : 'Add to favorites'}
+                                onClick={(e) => handleOpenEdit(link, e)}
+                                className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-all cursor-pointer"
+                                title="Edit Card"
                               >
-                                <Star className={`w-4 h-4 ${link.Favorite ? 'fill-amber-500' : ''}`} />
+                                <Edit2 className="w-3.5 h-3.5" />
                               </button>
+    
+                              {/* Delete Button */}
+                              <button
+                                onClick={(e) => handleDelete(link.ID, link.Title, e)}
+                                className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-all cursor-pointer"
+                                title="Delete Card"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className={`text-[10px] font-bold ${isSelected ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                              {isSelected ? '✓ SELECTED' : 'CLICK TO SELECT'}
                             </div>
                           )}
                         </div>
-  
-                        {/* Content Section (URL or Text Note) */}
-                        <div className="pt-1.5">
-                          {containsLink ? (
-                            <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-800/40 p-2 rounded-xl border border-zinc-100 dark:border-zinc-800/30">
-                              <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate flex-1 block">
+    
+                      </div>
+                      </VirtualItem>
+                    );
+                  })}
+                </div>
+              ) : (
+                /* Compact List View inspired by Google Password Manager & User's Screenshot */
+                <div className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/60 dark:border-zinc-800/80 divide-y divide-zinc-100 dark:divide-zinc-800/80 overflow-hidden shadow-xs">
+                  {filteredLinks.slice(0, visibleCount).map(link => {
+                    const containsLink = isUrl(link.Content);
+                    const isSelected = selectedLinkIds.includes(link.ID);
+                    const isExpanded = expandedLinkIds.includes(link.ID);
+                    
+                    // Custom Icon Strategy (IP/Router gets Router, Web URL gets Globe, Notes gets FileText)
+                    let RowIcon = Globe;
+                    if (!containsLink) {
+                      RowIcon = FileText;
+                    } else if (link.Content.includes('192.168.') || link.Content.includes('10.') || link.Content.includes('127.0.0.1')) {
+                      RowIcon = Router;
+                    }
+
+                    return (
+                      <VirtualItem key={link.ID} estimatedHeight={72}>
+                        <div 
+                          onClick={() => {
+                            if (isBulkMode) {
+                              handleCardClick(link.ID);
+                            } else {
+                              setExpandedLinkIds(prev => 
+                                prev.includes(link.ID) ? prev.filter(id => id !== link.ID) : [...prev, link.ID]
+                              );
+                            }
+                          }}
+                          className={`group flex flex-col transition-all duration-150 ${
+                            isBulkMode ? 'cursor-pointer select-none' : 'cursor-pointer hover:bg-zinc-50/50 dark:hover:bg-zinc-800/20'
+                          } ${
+                            isSelected ? 'bg-emerald-50/10 dark:bg-emerald-950/5' : ''
+                          }`}
+                        >
+                        {/* Main clickable row */}
+                        <div className="flex items-center justify-between px-4 py-3.5 gap-3">
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
+                            {/* Checkbox overlay or Icon */}
+                            {isBulkMode ? (
+                              <div className="shrink-0">
+                                {isSelected ? (
+                                  <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs border border-emerald-600">
+                                    <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                  </div>
+                                ) : (
+                                  <div className="w-5 h-5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 group-hover:border-emerald-500 transition-colors" />
+                                )}
+                              </div>
+                            ) : (
+                              <div className="w-10 h-10 rounded-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-zinc-500 dark:text-zinc-400 shrink-0">
+                                <RowIcon className="w-5 h-5" />
+                              </div>
+                            )}
+
+                            {/* Title & Content Preview */}
+                            <div className="min-w-0 flex-1 text-left">
+                              <div className="flex items-center gap-2">
+                                <span className="font-semibold text-zinc-800 dark:text-zinc-200 text-sm truncate">
+                                  {link.Title}
+                                </span>
+                                {link.Pinned && (
+                                  <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 uppercase tracking-wider bg-emerald-50 dark:bg-emerald-950/50 px-1.5 py-0.5 rounded-md flex items-center gap-0.5">
+                                    <Pin className="w-2.5 h-2.5 fill-emerald-600 dark:fill-emerald-400" /> ปักหมุด
+                                  </span>
+                                )}
+                              </div>
+                              <span className="text-xs font-mono text-zinc-400 dark:text-zinc-500 truncate block mt-0.5">
                                 {link.Content}
                               </span>
-                              {!isBulkMode && (
+                            </div>
+                          </div>
+
+                          {/* Category Badge & Expand Chevron */}
+                          <div className="flex items-center gap-2 shrink-0">
+                            {!isBulkMode && (
+                              <span className="hidden sm:inline-block text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-md">
+                                {link.Category}
+                              </span>
+                            )}
+                            
+                            {!isBulkMode && link.Favorite && (
+                              <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
+                            )}
+
+                            {!isBulkMode && (
+                              <div className="text-zinc-400 dark:text-zinc-500 p-1 rounded-full group-hover:text-zinc-600 dark:group-hover:text-zinc-300">
+                                {isExpanded ? (
+                                  <ChevronDown className="w-4 h-4 transition-transform" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4 transition-transform" />
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Collapsible Details Panel */}
+                        {isExpanded && !isBulkMode && (
+                          <div 
+                            className="px-4 pb-4 pt-1 border-t border-zinc-100 dark:border-zinc-800/50 bg-zinc-50/30 dark:bg-zinc-900/40 space-y-3 animate-in fade-in duration-200 text-left"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="space-y-1.5">
+                              <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">เนื้อหาทั้งหมด / คอนเทนต์:</span>
+                              <div className="flex items-center gap-2 bg-white dark:bg-zinc-800 p-2.5 rounded-xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-2xs">
+                                <span className="text-xs font-mono text-zinc-700 dark:text-zinc-300 break-all flex-1">
+                                  {link.Content}
+                                </span>
                                 <div className="flex gap-1 shrink-0">
                                   <button 
-                                    onClick={() => handleCopy(link.Content, 'URL')}
-                                    className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all cursor-pointer"
-                                    title="Copy Link"
+                                    onClick={() => handleCopy(link.Content, 'Content')}
+                                    className="p-1.5 text-zinc-500 hover:text-emerald-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-all cursor-pointer"
+                                    title="คัดลอกทั้งหมด"
                                   >
                                     <Copy className="w-3.5 h-3.5" />
                                   </button>
-                                  <a 
-                                    href={getFullUrl(link.Content)}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all"
-                                    title="Open Link"
-                                  >
-                                    <ExternalLink className="w-3.5 h-3.5" />
-                                  </a>
+                                  {containsLink && (
+                                    <a 
+                                      href={getFullUrl(link.Content)}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="p-1.5 text-zinc-500 hover:text-emerald-600 hover:bg-zinc-100 dark:hover:bg-zinc-700 rounded-lg transition-all flex items-center justify-center"
+                                      title="เปิดลิงก์"
+                                    >
+                                      <ExternalLink className="w-3.5 h-3.5" />
+                                    </a>
+                                  )}
                                 </div>
-                              )}
+                              </div>
                             </div>
-                          ) : (
-                            <p className="text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap bg-zinc-50 dark:bg-zinc-800/40 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30 max-h-36 overflow-y-auto">
-                              {link.Content}
-                            </p>
-                          )}
-                        </div>
-  
-                        {/* Note / Description if exists */}
-                        {link.Note && (
-                          <p className="text-xs text-zinc-500 dark:text-zinc-400 italic bg-amber-50/20 dark:bg-zinc-900 p-2 rounded-lg border border-amber-500/10">
-                            {link.Note}
-                          </p>
-                        )}
-  
-                        {/* Tags display */}
-                        {link.Tags && (
-                          <div className="flex flex-wrap gap-1 pt-1.5">
-                            {link.Tags.split(',').map(tag => {
-                              const trimmed = tag.trim();
-                              if (!trimmed) return null;
-                              const isFilteringByThisTag = selectedTag?.toLowerCase() === trimmed.toLowerCase();
-                              return (
+
+                            {link.Note && (
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">บันทึกเพิ่มเติม:</span>
+                                <p className="text-xs text-zinc-600 dark:text-zinc-300 bg-amber-50/10 dark:bg-zinc-800/30 p-2.5 rounded-xl border border-amber-500/10 italic">
+                                  {link.Note}
+                                </p>
+                              </div>
+                            )}
+
+                            {link.Tags && (
+                              <div className="space-y-1">
+                                <span className="text-[10px] font-semibold text-zinc-400 uppercase tracking-wider">แท็ก:</span>
+                                <div className="flex flex-wrap gap-1">
+                                  {link.Tags.split(',').map(tag => {
+                                    const trimmed = tag.trim();
+                                    if (!trimmed) return null;
+                                    const isFilteringByThisTag = selectedTag?.toLowerCase() === trimmed.toLowerCase();
+                                    return (
+                                      <button
+                                        key={trimmed}
+                                        onClick={() => setSelectedTag(isFilteringByThisTag ? null : trimmed)}
+                                        className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-all cursor-pointer ${
+                                          isFilteringByThisTag
+                                            ? 'bg-amber-500 text-white border border-transparent'
+                                            : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 border border-zinc-200/10'
+                                        }`}
+                                      >
+                                        #{trimmed}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-zinc-100 dark:border-zinc-800/60 text-[11px] text-zinc-400">
+                              <div className="flex items-center gap-3">
+                                <span className="flex items-center gap-1">
+                                  <Calendar className="w-3.5 h-3.5" />
+                                  <span>สร้างเมื่อ: {new Date(link.CreatedAt).toLocaleDateString()}</span>
+                                </span>
+                                <span className="inline-block sm:hidden px-1.5 py-0.5 bg-zinc-100 dark:bg-zinc-800 rounded-sm font-semibold uppercase text-[9px]">
+                                  {link.Category}
+                                </span>
+                              </div>
+
+                              <div className="flex items-center gap-1.5">
                                 <button
-                                  key={trimmed}
-                                  disabled={isBulkMode}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setSelectedTag(isFilteringByThisTag ? null : trimmed);
-                                  }}
-                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${
-                                    isBulkMode ? 'cursor-default' : 'cursor-pointer'
-                                  } ${
-                                    isFilteringByThisTag
-                                      ? 'bg-amber-500 text-white border border-transparent'
-                                      : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 border border-zinc-200/10'
+                                  onClick={(e) => handleTogglePin(link, e)}
+                                  className={`p-1.5 rounded-lg border transition-colors cursor-pointer flex items-center justify-center ${
+                                    link.Pinned 
+                                      ? 'bg-emerald-50 dark:bg-emerald-950/20 text-emerald-600 dark:text-emerald-400 border-emerald-500/20' 
+                                      : 'bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300'
                                   }`}
+                                  title={link.Pinned ? 'ยกเลิกการปักหมุด' : 'ปักหมุด'}
                                 >
-                                  #{trimmed}
+                                  <Pin className={`w-3.5 h-3.5 ${link.Pinned ? 'fill-emerald-600 dark:fill-emerald-400' : ''}`} />
                                 </button>
-                              );
-                            })}
+
+                                <button
+                                  onClick={(e) => handleToggleFavorite(link, e)}
+                                  className={`p-1.5 rounded-lg border transition-colors cursor-pointer flex items-center justify-center ${
+                                    link.Favorite 
+                                      ? 'bg-amber-50 dark:bg-amber-950/20 text-amber-500 border-amber-500/20' 
+                                      : 'bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 border-zinc-200 dark:border-zinc-700 text-zinc-400 hover:text-zinc-600 dark:hover:text-amber-500'
+                                  }`}
+                                  title={link.Favorite ? 'ยกเลิกรายการโปรด' : 'เพิ่มในรายการโปรด'}
+                                >
+                                  <Star className={`w-3.5 h-3.5 ${link.Favorite ? 'fill-amber-500' : ''}`} />
+                                </button>
+
+                                <button
+                                  onClick={(e) => handleOpenEdit(link, e)}
+                                  className="px-2.5 py-1 bg-white dark:bg-zinc-800 hover:bg-zinc-100 dark:hover:bg-zinc-700 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-300 rounded-lg font-medium transition-all flex items-center gap-1 cursor-pointer text-xs"
+                                >
+                                  <Edit2 className="w-3 h-3" /> แก้ไข
+                                </button>
+
+                                <button
+                                  onClick={(e) => handleDelete(link.ID, link.Title, e)}
+                                  className="px-2.5 py-1 bg-white dark:bg-zinc-800 hover:bg-red-50 dark:hover:bg-red-950/20 border border-zinc-200 dark:border-zinc-700 text-zinc-500 hover:text-red-500 rounded-lg font-medium transition-all flex items-center gap-1 cursor-pointer text-xs"
+                                >
+                                  <Trash2 className="w-3 h-3" /> ลบ
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         )}
                       </div>
-  
-                      {/* Footer Row */}
-                      <div className="px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-4">
-                        <div className="flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
-                          <Calendar className="w-3 h-3" />
-                          <span>{new Date(link.CreatedAt).toLocaleDateString()}</span>
-                        </div>
-                        
-                        {!isBulkMode ? (
-                          <div className="flex items-center gap-2">
-                            {/* Copy Content Button */}
-                            <button
-                              onClick={() => handleCopy(link.Content, 'Content')}
-                              className="px-2 py-1 rounded-md text-[11px] font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1 cursor-pointer"
-                              title="Copy Full Content"
-                            >
-                              <Copy className="w-3.5 h-3.5" /> Copy
-                            </button>
-  
-                            {/* Edit Button */}
-                            <button
-                              onClick={(e) => handleOpenEdit(link, e)}
-                              className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-all cursor-pointer"
-                              title="Edit Card"
-                            >
-                              <Edit2 className="w-3.5 h-3.5" />
-                            </button>
-  
-                            {/* Delete Button */}
-                            <button
-                              onClick={(e) => handleDelete(link.ID, link.Title, e)}
-                              className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-all cursor-pointer"
-                              title="Delete Card"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className={`text-[10px] font-bold ${isSelected ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
-                            {isSelected ? '✓ SELECTED' : 'CLICK TO SELECT'}
-                          </div>
-                        )}
-                      </div>
-  
-                    </div>
-                  );
-                })}
-              </div>
+                      </VirtualItem>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Show more button if there are more links */}
               {filteredLinks.length > visibleCount && (
