@@ -3,13 +3,21 @@ import { LinkItem, VaultItem } from '../types';
 const SPREADSHEET_NAME = 'LinkKeeper Spreadsheet Database';
 
 /**
+ * Helper to fetch Google API endpoints through our backend proxy to bypass client-side CORS and iframe sandbox restrictions.
+ */
+async function googleFetch(url: string, options: RequestInit = {}): Promise<Response> {
+  const proxyUrl = `/api/google-proxy?url=${encodeURIComponent(url)}`;
+  return fetch(proxyUrl, options);
+}
+
+/**
  * Find the spreadsheet in Google Drive by name.
  */
 export async function findSpreadsheet(token: string): Promise<string | null> {
   const query = encodeURIComponent(`name = '${SPREADSHEET_NAME}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`);
   const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`;
 
-  const response = await fetch(url, {
+  const response = await googleFetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -49,7 +57,7 @@ export async function createSpreadsheet(token: string): Promise<string> {
     ],
   };
 
-  const response = await fetch(url, {
+  const response = await googleFetch(url, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -78,7 +86,7 @@ export async function createSpreadsheet(token: string): Promise<string> {
 export async function initializeSpreadsheetStructure(token: string, spreadsheetId: string): Promise<void> {
   // Get existing sheet tabs
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}`;
-  const response = await fetch(url, {
+  const response = await googleFetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
@@ -109,7 +117,7 @@ export async function initializeSpreadsheetStructure(token: string, spreadsheetI
 
   if (requests.length > 0) {
     const updateUrl = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}:batchUpdate`;
-    const updateResponse = await fetch(updateUrl, {
+    const updateResponse = await googleFetch(updateUrl, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -135,7 +143,7 @@ async function initializeHeaders(token: string, spreadsheetId: string): Promise<
   const vaultHeaders = [['ID', 'Service', 'Username', 'Password', 'Note', 'Favorite', 'CreatedAt', 'UpdatedAt']];
 
   // Links headers
-  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A1:J1?valueInputOption=USER_ENTERED`, {
+  await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A1:J1?valueInputOption=USER_ENTERED`, {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -145,7 +153,7 @@ async function initializeHeaders(token: string, spreadsheetId: string): Promise<
   });
 
   // Vault headers
-  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A1:H1?valueInputOption=USER_ENTERED`, {
+  await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A1:H1?valueInputOption=USER_ENTERED`, {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -160,14 +168,15 @@ async function initializeHeaders(token: string, spreadsheetId: string): Promise<
  */
 export async function fetchLinksFromSheet(token: string, spreadsheetId: string): Promise<LinkItem[]> {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A2:J`;
-  const response = await fetch(url, {
+  const response = await googleFetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
   });
 
   if (!response.ok) {
-    return [];
+    const errText = await response.text();
+    throw new Error(`Failed to fetch links: Status ${response.status} (${response.statusText}) - ${errText}`);
   }
 
   const data = await response.json();
@@ -192,14 +201,15 @@ export async function fetchLinksFromSheet(token: string, spreadsheetId: string):
  */
 export async function fetchVaultFromSheet(token: string, spreadsheetId: string): Promise<VaultItem[]> {
   const url = `https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A2:H`;
-  const response = await fetch(url, {
+  const response = await googleFetch(url, {
     headers: {
       Authorization: `Bearer ${token}`,
     },
   });
 
   if (!response.ok) {
-    return [];
+    const errText = await response.text();
+    throw new Error(`Failed to fetch vault: Status ${response.status} (${response.statusText}) - ${errText}`);
   }
 
   const data = await response.json();
@@ -222,12 +232,17 @@ export async function fetchVaultFromSheet(token: string, spreadsheetId: string):
  */
 export async function saveLinksToSheet(token: string, spreadsheetId: string, links: LinkItem[]): Promise<void> {
   // Clear Link values first
-  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A2:J:clear`, {
+  const clearResponse = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A2:J:clear`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
     },
   });
+
+  if (!clearResponse.ok) {
+    const errText = await clearResponse.text();
+    throw new Error(`Failed to clear links range: Status ${clearResponse.status} (${clearResponse.statusText}) - ${errText}`);
+  }
 
   if (links.length === 0) return;
 
@@ -244,7 +259,7 @@ export async function saveLinksToSheet(token: string, spreadsheetId: string, lin
     l.UpdatedAt,
   ]);
 
-  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A2:J${links.length + 1}?valueInputOption=USER_ENTERED`, {
+  const response = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A2:J${links.length + 1}?valueInputOption=USER_ENTERED`, {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -254,7 +269,8 @@ export async function saveLinksToSheet(token: string, spreadsheetId: string, lin
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to save links to sheet: ${response.statusText}`);
+    const errText = await response.text();
+    throw new Error(`Failed to save links to sheet: Status ${response.status} (${response.statusText}) - ${errText}`);
   }
 }
 
@@ -263,12 +279,17 @@ export async function saveLinksToSheet(token: string, spreadsheetId: string, lin
  */
 export async function saveVaultToSheet(token: string, spreadsheetId: string, vault: VaultItem[]): Promise<void> {
   // Clear Vault values first
-  await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A2:H:clear`, {
+  const clearResponse = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A2:H:clear`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${token}`,
     },
   });
+
+  if (!clearResponse.ok) {
+    const errText = await clearResponse.text();
+    throw new Error(`Failed to clear vault range: Status ${clearResponse.status} (${clearResponse.statusText}) - ${errText}`);
+  }
 
   if (vault.length === 0) return;
 
@@ -283,7 +304,7 @@ export async function saveVaultToSheet(token: string, spreadsheetId: string, vau
     v.UpdatedAt,
   ]);
 
-  const response = await fetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A2:H${vault.length + 1}?valueInputOption=USER_ENTERED`, {
+  const response = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A2:H${vault.length + 1}?valueInputOption=USER_ENTERED`, {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -293,7 +314,8 @@ export async function saveVaultToSheet(token: string, spreadsheetId: string, vau
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to save vault to sheet: ${response.statusText}`);
+    const errText = await response.text();
+    throw new Error(`Failed to save vault to sheet: Status ${response.status} (${response.statusText}) - ${errText}`);
   }
 }
 

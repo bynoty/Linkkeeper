@@ -27,7 +27,10 @@ import {
   LogOut,
   Cloud,
   ExternalLink,
-  RefreshCw
+  RefreshCw,
+  Activity,
+  Terminal,
+  X
 } from 'lucide-react';
 
 interface SettingsPanelProps {
@@ -47,6 +50,10 @@ interface SettingsPanelProps {
   onSetupGoogleSheet?: (token?: string) => Promise<void>;
   onGoogleSheetsSync?: (token: string, spreadsheetId: string, currentSettings: AppSettings) => Promise<void>;
   vaultItems: VaultItem[];
+  lastGoogleSyncTime?: string | null;
+  googleSyncError?: string | null;
+  googleSyncLogs?: string[];
+  onClearSyncLogs?: () => void;
 }
 
 export default function SettingsPanel({
@@ -66,12 +73,20 @@ export default function SettingsPanel({
   onSetupGoogleSheet,
   onGoogleSheetsSync,
   vaultItems,
+  lastGoogleSyncTime,
+  googleSyncError,
+  googleSyncLogs = [],
+  onClearSyncLogs,
 }: SettingsPanelProps) {
   // Sync form state
   const [webAppUrl, setWebAppUrl] = useState(settings.webAppUrl || '');
   const [apiToken, setApiToken] = useState(settings.apiToken || '');
   const [syncOnLoad, setSyncOnLoad] = useState(settings.syncOnLoad || false);
   const [isTestingSync, setIsTestingSync] = useState(false);
+
+  // Diagnostic overlay state
+  const [showDiagnosticsModal, setShowDiagnosticsModal] = useState(false);
+  const [isRetryingSync, setIsRetryingSync] = useState(false);
 
   // Category addition state
   const [newCategory, setNewCategory] = useState('');
@@ -825,6 +840,57 @@ export default function SettingsPanel({
                     </button>
                   </div>
                 </div>
+
+                {/* Embedded Diagnostic Panel Section */}
+                <div className="border-t border-zinc-100 dark:border-zinc-800/60 pt-3.5 space-y-3 text-xs">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                      <Activity className="w-3.5 h-3.5 text-emerald-600" />
+                      Sync Diagnostics & Logs
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setShowDiagnosticsModal(true)}
+                      className="text-[11px] font-bold text-emerald-600 hover:text-emerald-500 dark:text-emerald-400 cursor-pointer flex items-center gap-1.5 transition-colors"
+                    >
+                      <Terminal className="w-3.5 h-3.5" /> Open Diagnostic Console
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-zinc-50/50 dark:bg-zinc-900/30 p-3 rounded-xl border border-zinc-100 dark:border-zinc-850/80">
+                    <div>
+                      <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Last Successful Sync</p>
+                      <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300 mt-1">
+                        {lastGoogleSyncTime ? lastGoogleSyncTime : <span className="text-zinc-400 italic font-normal">Never synced successfully</span>}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Connection Status</p>
+                      <div className="mt-1">
+                        {googleSyncError ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400">
+                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> Error Detected
+                          </span>
+                        ) : lastGoogleSyncTime ? (
+                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
+                            <Check className="w-3.5 h-3.5 shrink-0" /> Healthy
+                          </span>
+                        ) : (
+                          <span className="text-xs text-zinc-400 italic">No sync attempted</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {googleSyncError && (
+                    <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-xl space-y-1">
+                      <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider block">Google Sheets API Error Details</span>
+                      <p className="text-[11px] font-mono text-red-800 dark:text-red-300 break-all select-text leading-relaxed whitespace-pre-wrap">
+                        {googleSyncError}
+                      </p>
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -1217,6 +1283,172 @@ export default function SettingsPanel({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Google Sheets Sync Diagnostic Console Overlay */}
+      {showDiagnosticsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="w-full max-w-2xl bg-white dark:bg-zinc-950 rounded-3xl border border-zinc-200 dark:border-zinc-800 shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="px-6 py-4 border-b border-zinc-100 dark:border-zinc-800/60 flex items-center justify-between bg-zinc-50 dark:bg-zinc-900/40">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
+                  <Terminal className="w-4.5 h-4.5" />
+                </div>
+                <div className="text-left">
+                  <h3 className="font-bold text-sm text-zinc-800 dark:text-white">Google Sheets Sync Diagnostics</h3>
+                  <p className="text-[10px] text-zinc-400">Inspect real-time API logs and troubleshoot cloud synchronization errors</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDiagnosticsModal(false)}
+                className="p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-350 transition-all cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 overflow-y-auto space-y-5 flex-1">
+              {/* Stats Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-left">
+                <div className="p-4 rounded-2xl border border-zinc-100 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/30 space-y-1.5">
+                  <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Sync Connection State</p>
+                  <div>
+                    {googleToken ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-400 border border-emerald-200/50 dark:border-emerald-900/30">
+                        <Check className="w-3 h-3" /> Authorized & Connected
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-zinc-100 dark:bg-zinc-900 text-zinc-500 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800">
+                        Offline / Session Expired
+                      </span>
+                    )}
+                  </div>
+                  <div className="pt-1.5 text-[10px] text-zinc-400">
+                    Spreadsheet ID: <code className="bg-zinc-100 dark:bg-zinc-800 px-1 py-0.5 rounded text-[9px] select-all font-mono break-all">{settings.googleSpreadsheetId || 'None'}</code>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-2xl border border-zinc-100 dark:border-zinc-850 bg-zinc-50/50 dark:bg-zinc-900/30 space-y-1.5">
+                  <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Last Sync Attempt</p>
+                  <p className="text-xs font-semibold text-zinc-700 dark:text-zinc-300">
+                    {lastGoogleSyncTime ? lastGoogleSyncTime : <span className="text-zinc-400 italic font-normal">Never synced successfully</span>}
+                  </p>
+                  <div className="pt-1 text-[10px] text-zinc-450 flex items-center gap-1.5">
+                    Health Check: {googleSyncError ? (
+                      <span className="text-red-500 font-bold flex items-center gap-0.5"><AlertTriangle className="w-3 h-3" /> Failed</span>
+                    ) : lastGoogleSyncTime ? (
+                      <span className="text-emerald-500 font-bold flex items-center gap-0.5"><Check className="w-3 h-3" /> Succeeded</span>
+                    ) : (
+                      <span className="text-zinc-400 italic">None</span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Error Callout */}
+              {googleSyncError && (
+                <div className="p-4 bg-red-500/5 border border-red-500/10 rounded-2xl space-y-2.5 text-left">
+                  <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+                    <AlertTriangle className="w-4 h-4 shrink-0" />
+                    <h4 className="text-xs font-bold uppercase tracking-wider">Specific Google Sheets API Exception</h4>
+                  </div>
+                  <div className="bg-red-500/10 dark:bg-red-950/20 p-3.5 rounded-xl border border-red-500/15 max-h-36 overflow-y-auto">
+                    <p className="text-xs font-mono text-red-800 dark:text-red-300 select-text break-all whitespace-pre-wrap leading-relaxed">
+                      {googleSyncError}
+                    </p>
+                  </div>
+                  <div className="text-[10.5px] text-zinc-500 leading-normal space-y-1">
+                    <p>💡 <strong>Troubleshooting Tips:</strong></p>
+                    <ul className="list-disc list-inside space-y-1 pl-1">
+                      <li>If error is <span className="font-mono text-red-600 dark:text-red-400 font-bold">Unauthorized</span>: Google credentials expired. Please Click Log Out (Sign Out) and Sign In again to request a fresh token.</li>
+                      <li>If error is <span className="font-mono text-red-600 dark:text-red-400 font-bold">403 (Forbidden)</span>: The permission scopes are missing. Refresh the connection.</li>
+                      <li>If error is <span className="font-mono text-red-600 dark:text-red-400 font-bold">404 (Not Found)</span>: The spreadsheet on your drive was removed or renamed. Initialize a new spreadsheet tab.</li>
+                    </ul>
+                  </div>
+                </div>
+              )}
+
+              {/* Granular Execution Logs */}
+              <div className="space-y-2 text-left">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-[10.5px] font-bold text-zinc-400 dark:text-zinc-500 flex items-center gap-1.5 uppercase tracking-wider">
+                    <Terminal className="w-3.5 h-3.5" /> Granular Execution Logs
+                  </h4>
+                  {googleSyncLogs.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={onClearSyncLogs}
+                      className="text-[10px] text-zinc-400 hover:text-red-500 cursor-pointer font-semibold transition-all"
+                    >
+                      Clear Log trace
+                    </button>
+                  )}
+                </div>
+                <div className="h-56 rounded-2xl bg-zinc-950 dark:bg-black border border-zinc-800 p-4 font-mono text-[10.5px] leading-relaxed text-zinc-300 overflow-y-auto select-text space-y-1.5">
+                  {googleSyncLogs.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-zinc-500 space-y-1 text-center py-10">
+                      <Terminal className="w-7 h-7 text-zinc-800 animate-pulse" />
+                      <p className="font-semibold text-zinc-400">No logs generated yet</p>
+                      <p className="text-[10px] text-zinc-500 max-w-xs leading-normal">Press the re-run test sync button below to collect detailed API transactions logs.</p>
+                    </div>
+                  ) : (
+                    googleSyncLogs.map((log, idx) => {
+                      let textColor = 'text-zinc-300';
+                      if (log.includes('CRITICAL SYNC ERROR')) textColor = 'text-red-400 font-semibold';
+                      else if (log.includes('successfully') || log.includes('successful') || log.includes('completed') || log.includes('synchronized')) textColor = 'text-emerald-400';
+                      else if (log.includes('Step')) textColor = 'text-amber-400 font-bold mt-2 block border-b border-zinc-800/50 pb-0.5';
+                      return (
+                        <div key={idx} className={`${textColor} break-all`}>
+                          {log}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-6 py-4 bg-zinc-50 dark:bg-zinc-900/40 border-t border-zinc-100 dark:border-zinc-800 flex items-center justify-between">
+              <span className="text-[10px] text-zinc-400 font-mono">
+                Diag Engine: active
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowDiagnosticsModal(false)}
+                  className="px-4 py-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 text-xs font-semibold rounded-xl cursor-pointer transition-all"
+                >
+                  Close
+                </button>
+                <button
+                  type="button"
+                  disabled={isRetryingSync || !googleToken || !settings.googleSpreadsheetId}
+                  onClick={async () => {
+                    if (googleToken && settings.googleSpreadsheetId) {
+                      setIsRetryingSync(true);
+                      onShowToast('Retrying synchronization with diagnostic trace...', 'info');
+                      try {
+                        await onGoogleSheetsSync?.(googleToken, settings.googleSpreadsheetId, settings);
+                      } catch (err) {
+                        // handled by handlesync error tracker
+                      } finally {
+                        setIsRetryingSync(false);
+                      }
+                    }
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-bold rounded-xl flex items-center gap-1.5 cursor-pointer transition-all shadow-md shadow-emerald-600/10"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${isRetryingSync ? 'animate-spin' : ''}`} />
+                  {isRetryingSync ? 'Testing Sync...' : 'Re-run Sync Test'}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

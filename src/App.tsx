@@ -7,7 +7,8 @@ import { User } from 'firebase/auth';
 import { 
   initAuth, 
   googleSignIn, 
-  logout as googleLogout 
+  logout as googleLogout,
+  clearTokenCache
 } from './lib/googleAuthService';
 import { 
   findSpreadsheet, 
@@ -77,6 +78,30 @@ export default function App() {
   // Google Auth states
   const [user, setUser] = useState<User | null>(null);
   const [googleToken, setGoogleToken] = useState<string | null>(null);
+
+  // Google Sheets Direct Sync Diagnostics & Logging
+  const [googleSyncLogs, setGoogleSyncLogs] = useState<string[]>([]);
+  const [lastGoogleSyncTime, setLastGoogleSyncTime] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('link_keeper_last_google_sync_time');
+    } catch {
+      return null;
+    }
+  });
+  const [googleSyncError, setGoogleSyncError] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem('link_keeper_google_sync_error');
+    } catch {
+      return null;
+    }
+  });
+
+  const addSyncLog = (msg: string) => {
+    const timestamp = new Date().toLocaleTimeString();
+    const logLine = `[${timestamp}] ${msg}`;
+    console.log(logLine);
+    setGoogleSyncLogs(prev => [...prev, logLine]);
+  };
 
   // Initialize Auth state listener
   useEffect(() => {
@@ -249,42 +274,102 @@ export default function App() {
     }
   };
 
+  // Handle Google API Errors (including token expiry)
+  const handleGoogleError = (err: unknown, contextAction: string) => {
+    console.error(`Google API error during ${contextAction}:`, err);
+    const errMsg = err instanceof Error ? err.message : String(err);
+    
+    setGoogleSyncError(errMsg);
+    try {
+      localStorage.setItem('link_keeper_google_sync_error', errMsg);
+    } catch (e) {
+      console.error('Failed to save google sync error to localStorage:', e);
+    }
+
+    if (
+      errMsg.includes('Unauthorized') || 
+      errMsg.includes('unauthorized') || 
+      errMsg.includes('401') || 
+      errMsg.includes('invalid_grant') || 
+      errMsg.includes('auth') || 
+      errMsg.includes('token')
+    ) {
+      setGoogleToken(null);
+      clearTokenCache();
+      showToast('Google session expired. Please sign in again to refresh sync connection.', 'warning');
+    } else {
+      showToast(`Drive Sync Failed: ${errMsg}`, 'error');
+    }
+  };
+
   // Trigger a full direct Google Sheet synchronization
   const handleGoogleSheetsSync = async (token: string, spreadsheetId: string, currentSettings: AppSettings) => {
     setIsLoading(true);
+    setGoogleSyncLogs([]);
+    addSyncLog('Initializing Google Sheets synchronization process...');
     try {
       showToast('Syncing with Google Drive...', 'info');
 
       // 1. Fetch remote data
+      addSyncLog(`Step 1: Requesting remote records from spreadsheet ID: "${spreadsheetId}"...`);
+      addSyncLog('Fetching remote links...');
       const remoteLinks = await fetchLinksFromSheet(token, spreadsheetId);
+      addSyncLog(`Fetched ${remoteLinks.length} links from Google Sheet successfully.`);
+
+      addSyncLog('Fetching remote vault credentials...');
       const remoteVault = await fetchVaultFromSheet(token, spreadsheetId);
+      addSyncLog(`Fetched ${remoteVault.length} vault credentials from Google Sheet successfully.`);
 
       // 2. Load current local cache
+      addSyncLog('Step 2: Retrieving local storage cache from your browser...');
       const localDataLinks = localStorage.getItem('link_keeper_links');
       const localLinks: LinkItem[] = localDataLinks ? JSON.parse(localDataLinks) : [];
+      addSyncLog(`Found ${localLinks.length} local links in local cache.`);
 
       const localDataVault = localStorage.getItem('link_keeper_vault');
       const localVault: VaultItem[] = localDataVault ? JSON.parse(localDataVault) : [];
+      addSyncLog(`Found ${localVault.length} local credentials in local cache.`);
 
       // 3. Merge
+      addSyncLog('Step 3: Merging datasets (resolving conflicts by choosing the latest update time)...');
       const mergedLinks = mergeArrays(localLinks, remoteLinks);
+      addSyncLog(`Merged links: total ${mergedLinks.length} items.`);
+      
       const mergedVault = mergeArrays(localVault, remoteVault);
+      addSyncLog(`Merged vault items: total ${mergedVault.length} items.`);
 
       // 4. Update state & local storage cache
+      addSyncLog('Step 4: Writing merged records to in-app memory and local browser storage...');
       setLinks(mergedLinks);
       setVaultItems(mergedVault);
       localStorage.setItem('link_keeper_links', JSON.stringify(mergedLinks));
       localStorage.setItem('link_keeper_vault', JSON.stringify(mergedVault));
 
       // 5. Write merged data back to Google Sheet
+      addSyncLog('Step 5: Overwriting Google Sheets with unified dataset back-ups...');
+      addSyncLog(`Uploading ${mergedLinks.length} links to 'Links' tab...`);
       await saveLinksToSheet(token, spreadsheetId, mergedLinks);
+      addSyncLog("Links backup completed successfully.");
+
+      addSyncLog(`Uploading ${mergedVault.length} credentials to 'Vault' tab...`);
       await saveVaultToSheet(token, spreadsheetId, mergedVault);
+      addSyncLog("Vault backup completed successfully.");
+
+      addSyncLog('Step 6: Sync complete. All records synchronized!');
+      
+      const syncTime = new Date().toLocaleString();
+      setLastGoogleSyncTime(syncTime);
+      localStorage.setItem('link_keeper_last_google_sync_time', syncTime);
+      
+      setGoogleSyncError(null);
+      localStorage.removeItem('link_keeper_google_sync_error');
 
       showToast('Google Drive sync successful!', 'success');
     } catch (err) {
       console.error('Google Sheets direct sync failed:', err);
-      showToast(`Drive Sync Failed: ${(err as Error).message}`, 'error');
-      throw err;
+      const errMsg = err instanceof Error ? err.message : String(err);
+      addSyncLog(`CRITICAL SYNC ERROR DETECTED: ${errMsg}`);
+      handleGoogleError(err, 'direct sync');
     } finally {
       setIsLoading(false);
     }
@@ -325,7 +410,7 @@ export default function App() {
 
     } catch (err) {
       console.error('Setup Google Sheet failed:', err);
-      showToast(`Connection failed: ${(err as Error).message}`, 'error');
+      handleGoogleError(err, 'setup sheet');
     } finally {
       setIsLoading(false);
     }
@@ -385,7 +470,11 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+        try {
+          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+        } catch (syncErr) {
+          handleGoogleError(syncErr, 'save link');
+        }
       }
     } catch (err) {
       showToast(`Save failed: ${(err as Error).message}`, 'error');
@@ -407,7 +496,11 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+        try {
+          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+        } catch (syncErr) {
+          handleGoogleError(syncErr, 'delete link');
+        }
       }
     } catch (err) {
       showToast(`Delete failed: ${(err as Error).message}`, 'error');
@@ -433,7 +526,11 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+        try {
+          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+        } catch (syncErr) {
+          handleGoogleError(syncErr, 'bulk delete links');
+        }
       }
       showToast(`Successfully deleted ${ids.length} links`, 'success');
     } catch (err) {
@@ -462,7 +559,11 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+        try {
+          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
+        } catch (syncErr) {
+          handleGoogleError(syncErr, 'bulk move links');
+        }
       }
       showToast(`Successfully moved ${ids.length} links to ${newCategory}`, 'success');
     } catch (err) {
@@ -486,7 +587,11 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
+        try {
+          await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
+        } catch (syncErr) {
+          handleGoogleError(syncErr, 'save credential');
+        }
       }
     } catch (err) {
       showToast(`Credential save failed: ${(err as Error).message}`, 'error');
@@ -508,7 +613,11 @@ export default function App() {
       });
 
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
-        await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
+        try {
+          await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
+        } catch (syncErr) {
+          handleGoogleError(syncErr, 'delete credential');
+        }
       }
     } catch (err) {
       showToast(`Credential deletion failed: ${(err as Error).message}`, 'error');
@@ -607,7 +716,11 @@ export default function App() {
       // If Google sync is active, upload the bulk-merged list
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
         showToast('Uploading imported bookmarks to Google Sheets...', 'info');
-        await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, mergedLinks);
+        try {
+          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, mergedLinks);
+        } catch (syncErr) {
+          handleGoogleError(syncErr, 'upload bookmarks');
+        }
       }
 
       showToast(`Successfully imported ${parsed.length} bookmarks!`, 'success');
@@ -943,6 +1056,10 @@ export default function App() {
               onSetupGoogleSheet={handleSetupGoogleSheet}
               onGoogleSheetsSync={handleGoogleSheetsSync}
               vaultItems={vaultItems}
+              lastGoogleSyncTime={lastGoogleSyncTime}
+              googleSyncError={googleSyncError}
+              googleSyncLogs={googleSyncLogs}
+              onClearSyncLogs={() => setGoogleSyncLogs([])}
             />
           )}
         </main>

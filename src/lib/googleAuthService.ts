@@ -79,14 +79,21 @@ export const getAccessToken = async (): Promise<string | null> => {
 };
 
 /**
- * Log out of the Google session.
+ * Clear the Google token cache in memory and storage.
  */
-export const logout = async () => {
-  await auth.signOut();
+export const clearTokenCache = () => {
   cachedAccessToken = null;
   try {
     localStorage.removeItem(GOOGLE_TOKEN_KEY);
   } catch (e) {
     console.error('Failed to remove Google token from localStorage:', e);
   }
+};
+
+/**
+ * Log out of the Google session.
+ */
+export const logout = async () => {
+  await auth.signOut();
+  clearTokenCache();
 };
