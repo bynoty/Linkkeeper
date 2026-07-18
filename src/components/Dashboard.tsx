@@ -761,7 +761,7 @@ export default function Dashboard({
                               handleCardClick(link.ID);
                             }
                           }}
-                          className={`group relative bg-white dark:bg-zinc-900 rounded-2xl border transition-all duration-300 flex flex-col justify-between overflow-hidden ${
+                          className={`group relative bg-white dark:bg-zinc-900 rounded-2xl border transition-all duration-100 flex flex-col justify-between overflow-hidden ${
                             isBulkMode ? 'cursor-pointer select-none' : ''
                           } ${
                             isSelected
