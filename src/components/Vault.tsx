@@ -103,6 +103,14 @@ export default function Vault({
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
   const [sortBy, setSortBy] = useState<'date-added' | 'alphabetical' | 'favorited'>('date-added');
 
+  // Performance Optimization: Paginate list to avoid heavy DOM on mobile
+  const [visibleCount, setVisibleCount] = useState(15);
+
+  // Reset pagination limit when active filters change
+  useEffect(() => {
+    setVisibleCount(15);
+  }, [searchTerm, sortBy]);
+
   // Vault Item Edit Modal State
   const [editingItem, setEditingItem] = useState<VaultItem | null>(null);
   const [editForm, setEditForm] = useState<Partial<VaultItem>>({});
@@ -585,153 +593,168 @@ export default function Vault({
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredVaultItems.map(item => {
-            const isPasswordVisible = !!visiblePasswords[item.ID];
-            const plainPassword = decryptPassword(item.Password);
-            const { url, note } = parseVaultItemUrlAndNote(item);
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {filteredVaultItems.slice(0, visibleCount).map(item => {
+              const isPasswordVisible = !!visiblePasswords[item.ID];
+              const plainPassword = decryptPassword(item.Password);
+              const { url, note } = parseVaultItemUrlAndNote(item);
 
-            return (
-              <div 
-                key={item.ID}
-                className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/70 dark:border-zinc-800 p-5 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between"
-              >
-                
-                {/* Header info */}
-                <div className="space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div className="space-y-0.5">
-                      <h4 className="font-semibold text-zinc-900 dark:text-white truncate max-w-[180px]">
-                        {item.Service}
-                      </h4>
-                      <span className="text-[10px] text-zinc-400 flex items-center gap-1">
-                        <Calendar className="w-3 h-3" />
-                        Added {new Date(item.CreatedAt).toLocaleDateString()}
-                      </span>
-                    </div>
-
-                    <div className="flex gap-1 shrink-0">
-                      <button
-                        onClick={(e) => handleToggleFavorite(item, e)}
-                        className={`p-1 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
-                          item.Favorite ? 'text-amber-500' : 'text-zinc-400'
-                        }`}
-                        title={item.Favorite ? 'Remove from favorites' : 'Favorite'}
-                      >
-                        <Star className={`w-4 h-4 ${item.Favorite ? 'fill-amber-500' : ''}`} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Credentials Fields */}
-                  <div className="space-y-2 pt-1">
-                    
-                    {/* Username */}
-                    <div className="flex items-center justify-between gap-2 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-1.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30">
-                      <div className="truncate text-left min-w-0">
-                        <span className="block text-[10px] font-medium text-zinc-400 uppercase">Username</span>
-                        <span className="text-xs font-mono font-medium text-zinc-700 dark:text-zinc-300 truncate block">
-                          {item.Username || '(No username)'}
+              return (
+                <div 
+                  key={item.ID}
+                  className="bg-white dark:bg-zinc-900 rounded-2xl border border-zinc-200/70 dark:border-zinc-800 p-5 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between"
+                >
+                  
+                  {/* Header info */}
+                  <div className="space-y-3">
+                    <div className="flex justify-between items-start">
+                      <div className="space-y-0.5 text-left">
+                        <h4 className="font-semibold text-zinc-900 dark:text-white truncate max-w-[180px]">
+                          {item.Service}
+                        </h4>
+                        <span className="text-[10px] text-zinc-400 flex items-center gap-1">
+                          <Calendar className="w-3 h-3" />
+                          Added {new Date(item.CreatedAt).toLocaleDateString()}
                         </span>
                       </div>
-                      {item.Username && (
-                        <button
-                          onClick={() => handleCopy(item.Username, 'Username')}
-                          className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer"
-                          title="Copy Username"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
 
-                    {/* Password */}
-                    <div className="flex items-center justify-between gap-2 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-1.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30">
-                      <div className="truncate text-left min-w-0">
-                        <span className="block text-[10px] font-medium text-zinc-400 uppercase">Password</span>
-                        <span className="text-xs font-mono font-medium text-zinc-700 dark:text-zinc-300 truncate block tracking-wide">
-                          {isPasswordVisible ? plainPassword : '••••••••••••'}
-                        </span>
-                      </div>
                       <div className="flex gap-1 shrink-0">
                         <button
-                          onClick={() => togglePasswordVisibility(item.ID)}
-                          className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer"
-                          title={isPasswordVisible ? 'Hide password' : 'Show password'}
+                          onClick={(e) => handleToggleFavorite(item, e)}
+                          className={`p-1 rounded-md hover:bg-zinc-50 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
+                            item.Favorite ? 'text-amber-500' : 'text-zinc-400'
+                          }`}
+                          title={item.Favorite ? 'Remove from favorites' : 'Favorite'}
                         >
-                          {isPasswordVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-                        </button>
-                        <button
-                          onClick={() => handleCopy(plainPassword, 'Password')}
-                          className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer"
-                          title="Copy Password"
-                        >
-                          <Copy className="w-3.5 h-3.5" />
+                          <Star className={`w-4 h-4 ${item.Favorite ? 'fill-amber-500' : ''}`} />
                         </button>
                       </div>
                     </div>
 
-                    {/* Website / URL */}
-                    {url && (
-                      <div className="flex items-center justify-between gap-2 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-1.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30 animate-in fade-in duration-100">
-                        <div className="truncate text-left min-w-0 flex-1">
-                          <span className="block text-[10px] font-medium text-zinc-400 uppercase">Website / URL</span>
-                          <span className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400 truncate block">
-                            {url}
+                    {/* Credentials Fields */}
+                    <div className="space-y-2 pt-1">
+                      
+                      {/* Username */}
+                      <div className="flex items-center justify-between gap-2 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-1.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30">
+                        <div className="truncate text-left min-w-0">
+                          <span className="block text-[10px] font-medium text-zinc-400 uppercase">Username</span>
+                          <span className="text-xs font-mono font-medium text-zinc-700 dark:text-zinc-300 truncate block">
+                            {item.Username || '(No username)'}
+                          </span>
+                        </div>
+                        {item.Username && (
+                          <button
+                            onClick={() => handleCopy(item.Username, 'Username')}
+                            className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer"
+                            title="Copy Username"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Password */}
+                      <div className="flex items-center justify-between gap-2 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-1.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30">
+                        <div className="truncate text-left min-w-0">
+                          <span className="block text-[10px] font-medium text-zinc-400 uppercase">Password</span>
+                          <span className="text-xs font-mono font-medium text-zinc-700 dark:text-zinc-300 truncate block tracking-wide">
+                            {isPasswordVisible ? plainPassword : '••••••••••••'}
                           </span>
                         </div>
                         <div className="flex gap-1 shrink-0">
                           <button
-                            onClick={() => handleCopy(url, 'URL')}
+                            onClick={() => togglePasswordVisibility(item.ID)}
                             className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer"
-                            title="Copy URL"
+                            title={isPasswordVisible ? 'Hide password' : 'Show password'}
+                          >
+                            {isPasswordVisible ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          </button>
+                          <button
+                            onClick={() => handleCopy(plainPassword, 'Password')}
+                            className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer"
+                            title="Copy Password"
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
-                          <a
-                            href={url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer flex items-center justify-center"
-                            title="Visit Website"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5" />
-                          </a>
                         </div>
                       </div>
-                    )}
 
+                      {/* Website / URL */}
+                      {url && (
+                        <div className="flex items-center justify-between gap-2 bg-zinc-50 dark:bg-zinc-800/50 px-3 py-1.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30 animate-in fade-in duration-100">
+                          <div className="truncate text-left min-w-0 flex-1">
+                            <span className="block text-[10px] font-medium text-zinc-400 uppercase">Website / URL</span>
+                            <span className="text-xs font-mono font-medium text-emerald-600 dark:text-emerald-400 truncate block">
+                              {url}
+                            </span>
+                          </div>
+                          <div className="flex gap-1 shrink-0">
+                            <button
+                              onClick={() => handleCopy(url, 'URL')}
+                              className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer"
+                              title="Copy URL"
+                            >
+                              <Copy className="w-3.5 h-3.5" />
+                            </button>
+                            <a
+                              href={url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 rounded-md hover:bg-white dark:hover:bg-zinc-700 transition-all cursor-pointer flex items-center justify-center"
+                              title="Visit Website"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5" />
+                            </a>
+                          </div>
+                        </div>
+                      )}
+
+                    </div>
+
+                    {/* Note if exists */}
+                    {note && (
+                      <p className="text-[11px] text-zinc-500 dark:text-zinc-400 italic bg-zinc-50 dark:bg-zinc-800/20 p-2 rounded-xl break-words text-left animate-in fade-in duration-100">
+                        {note}
+                      </p>
+                    )}
                   </div>
 
-                  {/* Note if exists */}
-                  {note && (
-                    <p className="text-[11px] text-zinc-500 dark:text-zinc-400 italic bg-zinc-50 dark:bg-zinc-800/20 p-2 rounded-xl break-words text-left">
-                      {note}
-                    </p>
-                  )}
-                </div>
+                  {/* Operations footer */}
+                  <div className="flex justify-end gap-2 pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-4">
+                    <button
+                      onClick={(e) => handleOpenEdit(item, e)}
+                      className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors cursor-pointer"
+                      title="Edit Credential"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => handleDelete(item.ID, item.Service, e)}
+                      className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-colors cursor-pointer"
+                      title="Delete Account"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
 
-                {/* Operations footer */}
-                <div className="flex justify-end gap-2 pt-4 border-t border-zinc-100 dark:border-zinc-800 mt-4">
-                  <button
-                    onClick={(e) => handleOpenEdit(item, e)}
-                    className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-colors cursor-pointer"
-                    title="Edit Credential"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={(e) => handleDelete(item.ID, item.Service, e)}
-                    className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-colors cursor-pointer"
-                    title="Delete Account"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
                 </div>
+              );
+            })}
+          </div>
 
-              </div>
-            );
-          })}
+          {/* Show more button if there are more items */}
+          {filteredVaultItems.length > visibleCount && (
+            <div className="flex justify-center pt-2">
+              <button
+                type="button"
+                onClick={() => setVisibleCount(prev => prev + 15)}
+                className="px-6 py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl border border-zinc-200/50 dark:border-zinc-800/50 flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+              >
+                แสดงเพิ่มเติม ({filteredVaultItems.length - visibleCount} รายการ)
+              </button>
+            </div>
+          )}
         </div>
       )}
 

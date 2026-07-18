@@ -72,6 +72,14 @@ export default function Dashboard({
   const [bulkMoveCategory, setBulkMoveCategory] = useState<string>('');
   const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
 
+  // Performance Optimization: Paginate list to avoid heavy DOM on mobile
+  const [visibleCount, setVisibleCount] = useState(15);
+
+  // Reset pagination limit when active filters change
+  React.useEffect(() => {
+    setVisibleCount(15);
+  }, [searchTerm, selectedCategories, selectedTag, sortBy]);
+
   // Helper to check if string is URL
   const isUrl = (str: string): boolean => {
     try {
@@ -635,197 +643,212 @@ export default function Dashboard({
             </div>
           ) : (
             /* Grid layout for Link Items */
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {filteredLinks.map(link => {
-                const containsLink = isUrl(link.Content);
-                const isSelected = selectedLinkIds.includes(link.ID);
-                return (
-                  <div 
-                    key={link.ID}
-                    onClick={() => {
-                      if (isBulkMode) {
-                        handleCardClick(link.ID);
-                      }
-                    }}
-                    className={`group relative bg-white dark:bg-zinc-900 rounded-2xl border transition-all duration-300 flex flex-col justify-between overflow-hidden ${
-                      isBulkMode ? 'cursor-pointer select-none' : ''
-                    } ${
-                      isSelected
-                        ? 'ring-2 ring-emerald-500 border-emerald-500/50 dark:border-emerald-500 bg-emerald-50/5 dark:bg-emerald-950/5'
-                        : link.Pinned 
-                          ? 'border-emerald-500/50 dark:border-emerald-500/40 bg-linear-to-br from-emerald-50/10 to-transparent' 
-                          : 'border-zinc-200/70 dark:border-zinc-800'
-                    } hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700`}
-                  >
-                    {/* Bulk Selection Checkbox Overlay */}
-                    {isBulkMode && (
-                      <div className="absolute top-4 left-4 z-10">
-                        {isSelected ? (
-                          <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs border border-emerald-600 animate-in zoom-in-50 duration-150">
-                            <Check className="w-3.5 h-3.5 stroke-[3]" />
-                          </div>
-                        ) : (
-                          <div className="w-5 h-5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 group-hover:border-emerald-500 transition-colors" />
-                        )}
-                      </div>
-                    )}
-                    
-                    {/* Header */}
-                    <div className={`p-5 space-y-2 ${isBulkMode ? 'pl-12' : ''}`}>
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="space-y-1 max-w-[80%]">
-                          <h4 className="font-semibold text-zinc-900 dark:text-white leading-tight break-words group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
-                            {link.Title}
-                          </h4>
-                          <span className="inline-block text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-sm">
-                            {link.Category}
-                          </span>
+            <div className="space-y-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {filteredLinks.slice(0, visibleCount).map(link => {
+                  const containsLink = isUrl(link.Content);
+                  const isSelected = selectedLinkIds.includes(link.ID);
+                  return (
+                    <div 
+                      key={link.ID}
+                      onClick={() => {
+                        if (isBulkMode) {
+                          handleCardClick(link.ID);
+                        }
+                      }}
+                      className={`group relative bg-white dark:bg-zinc-900 rounded-2xl border transition-all duration-300 flex flex-col justify-between overflow-hidden ${
+                        isBulkMode ? 'cursor-pointer select-none' : ''
+                      } ${
+                        isSelected
+                          ? 'ring-2 ring-emerald-500 border-emerald-500/50 dark:border-emerald-500 bg-emerald-50/5 dark:bg-emerald-950/5'
+                          : link.Pinned 
+                            ? 'border-emerald-500/50 dark:border-emerald-500/40 bg-linear-to-br from-emerald-50/10 to-transparent' 
+                            : 'border-zinc-200/70 dark:border-zinc-800'
+                      } hover:shadow-md hover:border-zinc-300 dark:hover:border-zinc-700`}
+                    >
+                      {/* Bulk Selection Checkbox Overlay */}
+                      {isBulkMode && (
+                        <div className="absolute top-4 left-4 z-10">
+                          {isSelected ? (
+                            <div className="w-5 h-5 rounded-lg bg-emerald-600 text-white flex items-center justify-center shadow-xs border border-emerald-600 animate-in zoom-in-50 duration-150">
+                              <Check className="w-3.5 h-3.5 stroke-[3]" />
+                            </div>
+                          ) : (
+                            <div className="w-5 h-5 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-300 dark:border-zinc-700 group-hover:border-emerald-500 transition-colors" />
+                          )}
                         </div>
-                        
-                        {/* Action pins */}
-                        {!isBulkMode && (
-                          <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={(e) => handleTogglePin(link, e)}
-                              className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
-                                link.Pinned ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
-                              }`}
-                              title={link.Pinned ? 'Unpin' : 'Pin to top'}
-                            >
-                              <Pin className={`w-4 h-4 ${link.Pinned ? 'fill-emerald-600 dark:fill-emerald-400' : ''}`} />
-                            </button>
-                            <button
-                              onClick={(e) => handleToggleFavorite(link, e)}
-                              className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
-                                link.Favorite ? 'text-amber-500' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
-                              }`}
-                              title={link.Favorite ? 'Unfavorite' : 'Add to favorites'}
-                            >
-                              <Star className={`w-4 h-4 ${link.Favorite ? 'fill-amber-500' : ''}`} />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Content Section (URL or Text Note) */}
-                      <div className="pt-1.5">
-                        {containsLink ? (
-                          <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-800/40 p-2 rounded-xl border border-zinc-100 dark:border-zinc-800/30">
-                            <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate flex-1 block">
-                              {link.Content}
+                      )}
+                      
+                      {/* Header */}
+                      <div className={`p-5 space-y-2 ${isBulkMode ? 'pl-12' : ''}`}>
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="space-y-1 max-w-[80%]">
+                            <h4 className="font-semibold text-zinc-900 dark:text-white leading-tight break-words group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                              {link.Title}
+                            </h4>
+                            <span className="inline-block text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-sm">
+                              {link.Category}
                             </span>
-                            {!isBulkMode && (
-                              <div className="flex gap-1 shrink-0">
-                                <button 
-                                  onClick={() => handleCopy(link.Content, 'URL')}
-                                  className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all cursor-pointer"
-                                  title="Copy Link"
-                                >
-                                  <Copy className="w-3.5 h-3.5" />
-                                </button>
-                                <a 
-                                  href={getFullUrl(link.Content)}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all"
-                                  title="Open Link"
-                                >
-                                  <ExternalLink className="w-3.5 h-3.5" />
-                                </a>
-                              </div>
-                            )}
                           </div>
-                        ) : (
-                          <p className="text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap bg-zinc-50 dark:bg-zinc-800/40 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30 max-h-36 overflow-y-auto">
-                            {link.Content}
+                          
+                          {/* Action pins */}
+                          {!isBulkMode && (
+                            <div className="flex items-center gap-1 opacity-90 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={(e) => handleTogglePin(link, e)}
+                                className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
+                                  link.Pinned ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
+                                }`}
+                                title={link.Pinned ? 'Unpin' : 'Pin to top'}
+                              >
+                                <Pin className={`w-4 h-4 ${link.Pinned ? 'fill-emerald-600 dark:fill-emerald-400' : ''}`} />
+                              </button>
+                              <button
+                                onClick={(e) => handleToggleFavorite(link, e)}
+                                className={`p-1.5 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer ${
+                                  link.Favorite ? 'text-amber-500' : 'text-zinc-400 hover:text-zinc-600 dark:text-zinc-500 dark:hover:text-zinc-300'
+                                }`}
+                                title={link.Favorite ? 'Unfavorite' : 'Add to favorites'}
+                              >
+                                <Star className={`w-4 h-4 ${link.Favorite ? 'fill-amber-500' : ''}`} />
+                              </button>
+                            </div>
+                          )}
+                        </div>
+  
+                        {/* Content Section (URL or Text Note) */}
+                        <div className="pt-1.5">
+                          {containsLink ? (
+                            <div className="flex items-center gap-1.5 bg-zinc-50 dark:bg-zinc-800/40 p-2 rounded-xl border border-zinc-100 dark:border-zinc-800/30">
+                              <span className="text-xs font-mono text-zinc-500 dark:text-zinc-400 truncate flex-1 block">
+                                {link.Content}
+                              </span>
+                              {!isBulkMode && (
+                                <div className="flex gap-1 shrink-0">
+                                  <button 
+                                    onClick={() => handleCopy(link.Content, 'URL')}
+                                    className="p-1 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all cursor-pointer"
+                                    title="Copy Link"
+                                  >
+                                    <Copy className="w-3.5 h-3.5" />
+                                  </button>
+                                  <a 
+                                    href={getFullUrl(link.Content)}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="p-1 text-zinc-400 hover:text-emerald-600 dark:hover:text-emerald-400 hover:bg-white dark:hover:bg-zinc-700 rounded-md transition-all"
+                                    title="Open Link"
+                                  >
+                                    <ExternalLink className="w-3.5 h-3.5" />
+                                  </a>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-xs text-zinc-600 dark:text-zinc-300 font-mono whitespace-pre-wrap bg-zinc-50 dark:bg-zinc-800/40 p-2.5 rounded-xl border border-zinc-100 dark:border-zinc-800/30 max-h-36 overflow-y-auto">
+                              {link.Content}
+                            </p>
+                          )}
+                        </div>
+  
+                        {/* Note / Description if exists */}
+                        {link.Note && (
+                          <p className="text-xs text-zinc-500 dark:text-zinc-400 italic bg-amber-50/20 dark:bg-zinc-900 p-2 rounded-lg border border-amber-500/10">
+                            {link.Note}
                           </p>
                         )}
+  
+                        {/* Tags display */}
+                        {link.Tags && (
+                          <div className="flex flex-wrap gap-1 pt-1.5">
+                            {link.Tags.split(',').map(tag => {
+                              const trimmed = tag.trim();
+                              if (!trimmed) return null;
+                              const isFilteringByThisTag = selectedTag?.toLowerCase() === trimmed.toLowerCase();
+                              return (
+                                <button
+                                  key={trimmed}
+                                  disabled={isBulkMode}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setSelectedTag(isFilteringByThisTag ? null : trimmed);
+                                  }}
+                                  className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${
+                                    isBulkMode ? 'cursor-default' : 'cursor-pointer'
+                                  } ${
+                                    isFilteringByThisTag
+                                      ? 'bg-amber-500 text-white border border-transparent'
+                                      : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 border border-zinc-200/10'
+                                  }`}
+                                >
+                                  #{trimmed}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
                       </div>
-
-                      {/* Note / Description if exists */}
-                      {link.Note && (
-                        <p className="text-xs text-zinc-500 dark:text-zinc-400 italic bg-amber-50/20 dark:bg-zinc-900 p-2 rounded-lg border border-amber-500/10">
-                          {link.Note}
-                        </p>
-                      )}
-
-                      {/* Tags display */}
-                      {link.Tags && (
-                        <div className="flex flex-wrap gap-1 pt-1.5">
-                          {link.Tags.split(',').map(tag => {
-                            const trimmed = tag.trim();
-                            if (!trimmed) return null;
-                            const isFilteringByThisTag = selectedTag?.toLowerCase() === trimmed.toLowerCase();
-                            return (
-                              <button
-                                key={trimmed}
-                                disabled={isBulkMode}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setSelectedTag(isFilteringByThisTag ? null : trimmed);
-                                }}
-                                className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium transition-all ${
-                                  isBulkMode ? 'cursor-default' : 'cursor-pointer'
-                                } ${
-                                  isFilteringByThisTag
-                                    ? 'bg-amber-500 text-white border border-transparent'
-                                    : 'bg-zinc-100 text-zinc-500 hover:bg-zinc-200 dark:bg-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-700 border border-zinc-200/10'
-                                }`}
-                              >
-                                #{trimmed}
-                              </button>
-                            );
-                          })}
+  
+                      {/* Footer Row */}
+                      <div className="px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-4">
+                        <div className="flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
+                          <Calendar className="w-3 h-3" />
+                          <span>{new Date(link.CreatedAt).toLocaleDateString()}</span>
                         </div>
-                      )}
-                    </div>
-
-                    {/* Footer Row */}
-                    <div className="px-5 py-3.5 bg-zinc-50 dark:bg-zinc-900/60 border-t border-zinc-100 dark:border-zinc-800/80 flex items-center justify-between gap-4">
-                      <div className="flex items-center gap-1 text-[10px] text-zinc-400 dark:text-zinc-500">
-                        <Calendar className="w-3 h-3" />
-                        <span>{new Date(link.CreatedAt).toLocaleDateString()}</span>
+                        
+                        {!isBulkMode ? (
+                          <div className="flex items-center gap-2">
+                            {/* Copy Content Button */}
+                            <button
+                              onClick={() => handleCopy(link.Content, 'Content')}
+                              className="px-2 py-1 rounded-md text-[11px] font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1 cursor-pointer"
+                              title="Copy Full Content"
+                            >
+                              <Copy className="w-3.5 h-3.5" /> Copy
+                            </button>
+  
+                            {/* Edit Button */}
+                            <button
+                              onClick={(e) => handleOpenEdit(link, e)}
+                              className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-all cursor-pointer"
+                              title="Edit Card"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+  
+                            {/* Delete Button */}
+                            <button
+                              onClick={(e) => handleDelete(link.ID, link.Title, e)}
+                              className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-all cursor-pointer"
+                              title="Delete Card"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className={`text-[10px] font-bold ${isSelected ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
+                            {isSelected ? '✓ SELECTED' : 'CLICK TO SELECT'}
+                          </div>
+                        )}
                       </div>
-                      
-                      {!isBulkMode ? (
-                        <div className="flex items-center gap-2">
-                          {/* Copy Content Button */}
-                          <button
-                            onClick={() => handleCopy(link.Content, 'Content')}
-                            className="px-2 py-1 rounded-md text-[11px] font-medium text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors flex items-center gap-1 cursor-pointer"
-                            title="Copy Full Content"
-                          >
-                            <Copy className="w-3.5 h-3.5" /> Copy
-                          </button>
-
-                          {/* Edit Button */}
-                          <button
-                            onClick={(e) => handleOpenEdit(link, e)}
-                            className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-md transition-all cursor-pointer"
-                            title="Edit Card"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                          </button>
-
-                          {/* Delete Button */}
-                          <button
-                            onClick={(e) => handleDelete(link.ID, link.Title, e)}
-                            className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 rounded-md transition-all cursor-pointer"
-                            title="Delete Card"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      ) : (
-                        <div className={`text-[10px] font-bold ${isSelected ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400 dark:text-zinc-500'}`}>
-                          {isSelected ? '✓ SELECTED' : 'CLICK TO SELECT'}
-                        </div>
-                      )}
+  
                     </div>
+                  );
+                })}
+              </div>
 
-                  </div>
-                );
-              })}
+              {/* Show more button if there are more links */}
+              {filteredLinks.length > visibleCount && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setVisibleCount(prev => prev + 15)}
+                    className="px-6 py-2.5 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-800 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-200 text-xs font-semibold rounded-xl border border-zinc-200/50 dark:border-zinc-800/50 flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                  >
+                    แสดงเพิ่มเติม ({filteredLinks.length - visibleCount} รายการ)
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

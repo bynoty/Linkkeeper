@@ -919,7 +919,7 @@ export default function App() {
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6">
         
         {/* Top Header Navigation */}
-        <header className="bg-white/70 dark:bg-zinc-900/60 backdrop-blur-md px-4 sm:px-6 py-4 rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
+        <header className="bg-white/95 dark:bg-zinc-900/95 md:bg-white/70 md:dark:bg-zinc-900/60 md:backdrop-blur-md px-4 sm:px-6 py-4 rounded-3xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-xs flex flex-col md:flex-row items-center justify-between gap-4">
           
           {/* Logo & Platform Name */}
           <div className="flex items-center gap-3 shrink-0">
@@ -1092,7 +1092,7 @@ export default function App() {
 
         {/* Tab Navigation rails */}
         <nav className="flex justify-center">
-          <div className="bg-white/70 dark:bg-zinc-900/60 backdrop-blur-md p-1.5 rounded-2xl border border-zinc-200/50 dark:border-zinc-800/50 flex shadow-xs gap-1">
+          <div className="bg-white/95 dark:bg-zinc-900/95 md:bg-white/70 md:dark:bg-zinc-900/60 md:backdrop-blur-md p-1.5 rounded-2xl border border-zinc-200/50 dark:border-zinc-800/50 flex shadow-xs gap-1">
             {/* Tab: Dashboard */}
             <button
               onClick={() => startTransition(() => setActiveTab('dashboard'))}
