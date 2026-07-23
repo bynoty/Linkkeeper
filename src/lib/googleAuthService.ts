@@ -14,29 +14,41 @@ provider.addScope('https://www.googleapis.com/auth/drive.file');
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;
 const GOOGLE_TOKEN_KEY = 'link_keeper_google_token';
+const GOOGLE_TOKEN_TIME_KEY = 'link_keeper_google_token_time';
+const TOKEN_MAX_AGE_MS = 50 * 60 * 1000; // 50 minutes token freshness window
 
-// Try to recover token from localStorage
+// Try to recover token from localStorage if not expired
 try {
-  cachedAccessToken = localStorage.getItem(GOOGLE_TOKEN_KEY);
+  const storedToken = localStorage.getItem(GOOGLE_TOKEN_KEY);
+  const storedTime = localStorage.getItem(GOOGLE_TOKEN_TIME_KEY);
+  if (storedToken && storedTime) {
+    const age = Date.now() - parseInt(storedTime, 10);
+    if (age < TOKEN_MAX_AGE_MS) {
+      cachedAccessToken = storedToken;
+    } else {
+      console.warn('Stored Google OAuth access token is expired (>50m). Resetting cached token.');
+      localStorage.removeItem(GOOGLE_TOKEN_KEY);
+      localStorage.removeItem(GOOGLE_TOKEN_TIME_KEY);
+      cachedAccessToken = null;
+    }
+  } else if (storedToken) {
+    cachedAccessToken = storedToken;
+  }
 } catch (e) {
   console.error('Failed to read Google token from localStorage:', e);
 }
 
 /**
  * Initialize auth state listener.
+ * Keeps user logged in if Firebase Auth session is active, even if OAuth token expires.
  */
 export const initAuth = (
-  onAuthSuccess?: (user: User, token: string) => void,
+  onAuthSuccess?: (user: User, token: string | null) => void,
   onAuthFailure?: () => void
 ) => {
   return onAuthStateChanged(auth, async (user: User | null) => {
     if (user) {
-      if (cachedAccessToken) {
-        if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
-      } else if (!isSigningIn) {
-        cachedAccessToken = null;
-        if (onAuthFailure) onAuthFailure();
-      }
+      if (onAuthSuccess) onAuthSuccess(user, cachedAccessToken);
     } else {
       cachedAccessToken = null;
       if (onAuthFailure) onAuthFailure();
@@ -59,6 +71,7 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     cachedAccessToken = credential.accessToken;
     try {
       localStorage.setItem(GOOGLE_TOKEN_KEY, cachedAccessToken);
+      localStorage.setItem(GOOGLE_TOKEN_TIME_KEY, Date.now().toString());
     } catch (e) {
       console.error('Failed to save Google token to localStorage:', e);
     }
@@ -85,6 +98,7 @@ export const clearTokenCache = () => {
   cachedAccessToken = null;
   try {
     localStorage.removeItem(GOOGLE_TOKEN_KEY);
+    localStorage.removeItem(GOOGLE_TOKEN_TIME_KEY);
   } catch (e) {
     console.error('Failed to remove Google token from localStorage:', e);
   }

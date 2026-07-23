@@ -383,7 +383,13 @@ export default function App() {
   };
 
   // Trigger a full direct Google Sheet synchronization
-  const handleGoogleSheetsSync = async (token: string, spreadsheetId: string, currentSettings: AppSettings) => {
+  const handleGoogleSheetsSync = async (token: string | null, spreadsheetId: string, currentSettings: AppSettings) => {
+    if (!token) {
+      console.warn('Google Sheets sync skipped: token is missing or expired.');
+      setGoogleSyncError('Google OAuth session token missing or expired. Please click "Reconnect Google" to re-authorize.');
+      showToast('Google token expired. Please click Reconnect Google to restore sync.', 'warning');
+      return;
+    }
     setIsLoading(true);
     setGoogleSyncLogs([]);
     addSyncLog('Initializing Google Sheets synchronization process...');
