@@ -1017,6 +1017,21 @@ export default function App() {
                   </span>
                 </button>
 
+                {/* Top Header Reconnect / Renew Token Button */}
+                <button
+                  onClick={handleGoogleSignIn}
+                  disabled={isLoading}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer disabled:opacity-50 ${
+                    googleSyncError || !googleToken
+                      ? 'bg-amber-500/15 hover:bg-amber-500/25 text-amber-700 dark:text-amber-300 border border-amber-500/30 animate-pulse'
+                      : 'bg-emerald-600/10 hover:bg-emerald-600/20 text-emerald-700 dark:text-emerald-300 border border-emerald-500/20'
+                  }`}
+                  title="1-Click Reconnect Google Session & Renew Token"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 ${isLoading ? 'animate-spin' : ''}`} />
+                  <span className="hidden sm:inline">Reconnect</span>
+                </button>
+
                 {/* Google Logout Button */}
                 <button
                   onClick={handleGoogleLogout}

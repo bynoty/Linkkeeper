@@ -9,7 +9,7 @@
 ## 2. Implemented Features & Technical Architecture (คุณสมบัติและสถาปัตยกรรมที่พัฒนาเสร็จสมบูรณ์)
 
 ### 2.1 Google Drive / Sheets Persistent Synchronization & Smooth Token Renewal
-- **Smooth In-Place Reconnect**: เพิ่มปุ่ม `Reconnect / Renew Token` ในหน้า Settings และ Error Banner ช่วยให้ผู้ใช้ต่ออายุ OAuth Access Token ที่หมดอายุ (อายุ 1 ชั่วโมง) ได้ทันทีโดย **ไม่ต้อง Sign Out จากระบบหลัก**
+- **Smooth In-Place Top Header & Settings Reconnect**: เพิ่มปุ่ม `Reconnect` บนแถบเมนูหลักด้านบน (Top Navigation Header Bar) และในหน้า Settings/Error Banner ช่วยให้ผู้ใช้ต่ออายุ OAuth Access Token ที่หมดอายุ (อายุ 1 ชั่วโมง) ได้ทันทีใน 1-Click โดย **ไม่ต้อง Sign Out จากระบบหลัก** และ **ไม่ต้องสลับไปที่หน้า Settings**
 - **OAuth Prompt Parameter**: กำหนด `prompt: 'select_account'` ใน `GoogleAuthProvider` เพื่อให้สลับ/ยืนยันสิทธิ์ได้อย่างรวดเร็ว
 - **Automated Sync Retry & Offline Cache**: เมื่อได้รับ Token ใหม่สำเร็จ ระบบจะเรียกซิงค์ Google Sheets ต่อทันที และเก็บสำรองข้อมูลใน Local Browser Cache ป้องกันข้อมูลสูญหายเมื่อเครือข่ายหลุด
 - **Architecture Diagram**:
