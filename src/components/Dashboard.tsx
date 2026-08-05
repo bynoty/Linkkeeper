@@ -28,10 +28,18 @@ import {
   ChevronRight,
   ChevronDown,
   Globe,
-  Router
+  Router,
+  Activity,
+  Bookmark,
+  AlertTriangle,
+  Loader2,
+  Clock
 } from 'lucide-react';
 import { suggestCategoryFromUrl, checkForDuplicateLink } from '../lib/api';
+import { checkLinkHealth, getExpirationStatus } from '../lib/linkUtils';
 import { VirtualItem } from './VirtualItem';
+import { BookmarkImporterModal } from './BookmarkImporterModal';
+import { BookmarkletModal } from './BookmarkletModal';
 
 interface DashboardProps {
   links: LinkItem[];
@@ -43,6 +51,7 @@ interface DashboardProps {
   onShowToast: (msg: string, type: 'success' | 'info' | 'warning' | 'error') => void;
   searchTerm: string;
   isLoading: boolean;
+  onImportLinks?: (newLinks: Omit<LinkItem, 'ID' | 'CreatedAt' | 'UpdatedAt'>[]) => void;
 }
 
 export default function Dashboard({
@@ -55,11 +64,59 @@ export default function Dashboard({
   onShowToast,
   searchTerm,
   isLoading,
+  onImportLinks,
 }: DashboardProps) {
+  // Modal states
+  const [isImporterOpen, setIsImporterOpen] = useState(false);
+  const [isBookmarkletOpen, setIsBookmarkletOpen] = useState(false);
+
+  // Health check state
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [healthProgress, setHealthProgress] = useState({ current: 0, total: 0 });
+
   // State for active filters
   const [selectedCategories, setSelectedCategories] = useState<string[]>([]);
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [filterExpiredOnly, setFilterExpiredOnly] = useState(false);
   const [sortBy, setSortBy] = useState<'date-added' | 'alphabetical' | 'favorited'>('date-added');
+
+  // Check Expiring/Expired items
+  const expiringItems = useMemo(() => {
+    return links.filter(l => {
+      if (!l.ExpiresAt) return false;
+      const status = getExpirationStatus(l.ExpiresAt);
+      return status.isExpired || status.isExpiringSoon;
+    });
+  }, [links]);
+
+  const handleCheckAllHealth = async () => {
+    const urlsToCheck = links.filter(l => isUrl(l.Content));
+    if (urlsToCheck.length === 0) {
+      onShowToast('No link URLs to check', 'info');
+      return;
+    }
+
+    setIsCheckingHealth(true);
+    setHealthProgress({ current: 0, total: urlsToCheck.length });
+
+    let count = 0;
+    for (let i = 0; i < urlsToCheck.length; i++) {
+      const link = urlsToCheck[i];
+      setHealthProgress({ current: i + 1, total: urlsToCheck.length });
+      const res = await checkLinkHealth(getFullUrl(link.Content));
+      
+      await onSaveLink({
+        ...link,
+        HealthStatus: res.ok ? 'ok' : 'broken',
+        StatusCode: res.statusCode,
+        LastCheckedAt: res.checkedAt,
+      }, false);
+      count++;
+    }
+
+    setIsCheckingHealth(false);
+    onShowToast(`Completed site health check for ${count} links!`, 'success');
+  };
   
   // State for Edit Modal
   const [editingLink, setEditingLink] = useState<LinkItem | null>(null);
@@ -418,6 +475,65 @@ export default function Dashboard({
 
   return (
     <div className="space-y-6" id="dashboard-tab">
+
+      {/* Quick Action Tools Bar */}
+      <div className="bg-white/80 dark:bg-zinc-900/80 backdrop-blur-md p-3.5 rounded-2xl border border-zinc-200/60 dark:border-zinc-800/60 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5 px-2 py-1 bg-zinc-100 dark:bg-zinc-800 rounded-lg">
+            <Sparkles className="w-3.5 h-3.5 text-emerald-500" /> Quick Tools
+          </span>
+
+          <button
+            type="button"
+            onClick={() => setIsImporterOpen(true)}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+          >
+            <FolderInput className="w-3.5 h-3.5" /> Import Bookmarks
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsBookmarkletOpen(true)}
+            className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all shadow-xs cursor-pointer"
+          >
+            <Bookmark className="w-3.5 h-3.5" /> 1-Click Saver Tools
+          </button>
+        </div>
+
+        <button
+          type="button"
+          onClick={handleCheckAllHealth}
+          disabled={isCheckingHealth}
+          className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/20 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+        >
+          {isCheckingHealth ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+          ) : (
+            <Activity className="w-3.5 h-3.5 text-amber-500" />
+          )}
+          {isCheckingHealth
+            ? `Checking site health (${healthProgress.current}/${healthProgress.total})...`
+            : 'Check Site Health'}
+        </button>
+      </div>
+
+      {/* Expiring / Expired Alert Banner if any */}
+      {expiringItems.length > 0 && (
+        <div className="bg-amber-500/10 border border-amber-500/30 p-4 rounded-2xl flex items-center justify-between gap-3 text-amber-800 dark:text-amber-300">
+          <div className="flex items-center gap-2.5 text-xs font-medium">
+            <AlertTriangle className="w-4 h-4 text-amber-500 shrink-0" />
+            <span>
+              You have <strong className="font-bold">{expiringItems.length}</strong> link(s) expiring soon or expired.
+            </span>
+          </div>
+          <button
+            onClick={() => setFilterExpiredOnly(!filterExpiredOnly)}
+            className="text-xs font-bold underline hover:text-amber-900 dark:hover:text-amber-100 cursor-pointer transition-colors"
+          >
+            {filterExpiredOnly ? 'Show All Links' : 'View Expiring Items'}
+          </button>
+        </div>
+      )}
       
       {/* Category Filter Bar */}
       <div className="bg-white/70 dark:bg-zinc-900/60 backdrop-blur-md p-4 rounded-2xl border border-zinc-200/50 dark:border-zinc-800/50 shadow-xs">
@@ -791,9 +907,42 @@ export default function Dashboard({
                               <h4 className="font-semibold text-zinc-900 dark:text-white leading-tight break-words group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
                                 {link.Title}
                               </h4>
-                              <span className="inline-block text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-sm">
-                                {link.Category}
-                              </span>
+                              <div className="flex flex-wrap gap-1.5 items-center pt-0.5">
+                                <span className="inline-block text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-sm">
+                                  {link.Category}
+                                </span>
+
+                                {/* Health Badge */}
+                                {link.HealthStatus && (
+                                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm ${
+                                    link.HealthStatus === 'ok' 
+                                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
+                                      : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
+                                  }`}>
+                                    <Activity className="w-2.5 h-2.5" />
+                                    {link.HealthStatus === 'ok' ? `Live (${link.StatusCode || 200})` : `Broken (${link.StatusCode || 404})`}
+                                  </span>
+                                )}
+
+                                {/* Expiration Badge */}
+                                {link.ExpiresAt && (() => {
+                                  const status = getExpirationStatus(link.ExpiresAt);
+                                  if (status.isExpired) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20">
+                                        <Clock className="w-2.5 h-2.5" /> Expired
+                                      </span>
+                                    );
+                                  } else if (status.isExpiringSoon) {
+                                    return (
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                                        <Clock className="w-2.5 h-2.5 animate-pulse" /> Expiring ({status.daysRemaining}d)
+                                      </span>
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                              </div>
                             </div>
                             
                             {/* Action pins */}
@@ -1443,6 +1592,31 @@ export default function Dashboard({
         </div>
       )}
 
+      {/* Bookmark Importer Modal */}
+      {isImporterOpen && (
+        <BookmarkImporterModal
+          isOpen={isImporterOpen}
+          onClose={() => setIsImporterOpen(false)}
+          onImportLinks={(imported) => {
+            if (onImportLinks) {
+              onImportLinks(imported);
+            } else {
+              imported.forEach(link => onSaveLink(link, true));
+            }
+            onShowToast(`Successfully imported ${imported.length} bookmarks!`, 'success');
+          }}
+          onShowToast={onShowToast}
+        />
+      )}
+
+      {/* Bookmarklet & Extension Modal */}
+      {isBookmarkletOpen && (
+        <BookmarkletModal
+          isOpen={isBookmarkletOpen}
+          onClose={() => setIsBookmarkletOpen(false)}
+          onShowToast={onShowToast}
+        />
+      )}
     </div>
   );
 }

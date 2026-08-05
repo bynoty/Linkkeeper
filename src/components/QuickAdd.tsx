@@ -7,6 +7,7 @@ import CryptoJS from 'crypto-js';
 import jsQR from 'jsqr';
 import { LinkItem, VaultItem } from '../types';
 import { suggestCategoryFromUrl, checkForDuplicateLink } from '../lib/api';
+import { findDuplicateLink, summarizeLinkWithAi } from '../lib/linkUtils';
 import { 
   Link as LinkIcon, 
   FileText, 
@@ -20,7 +21,9 @@ import {
   Sparkles,
   QrCode,
   Camera,
-  CameraOff
+  CameraOff,
+  Calendar,
+  Loader2
 } from 'lucide-react';
 
 interface QuickAddProps {
@@ -46,6 +49,7 @@ export default function QuickAdd({
 }: QuickAddProps) {
   const [activeType, setActiveType] = useState<QuickType>('link');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isAiSummarizing, setIsAiSummarizing] = useState(false);
 
   // Form States - Link & Note
   const [title, setTitle] = useState('');
@@ -55,6 +59,7 @@ export default function QuickAdd({
   const [hasManualCategoryChange, setHasManualCategoryChange] = useState(false);
   const [tags, setTags] = useState('');
   const [note, setNote] = useState('');
+  const [expiresAt, setExpiresAt] = useState('');
   const [favorite, setFavorite] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [duplicateMatch, setDuplicateMatch] = useState<LinkItem | null>(null);
@@ -80,6 +85,30 @@ export default function QuickAdd({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const animationFrameRef = useRef<number | null>(null);
+
+  const handleAiSummarize = async () => {
+    if (!content && !title) {
+      onShowToast('Please enter a URL or Title first for AI analysis.', 'warning');
+      return;
+    }
+    setIsAiSummarizing(true);
+    try {
+      const result = await summarizeLinkWithAi(content, title, note);
+      if (result.summary) setNote(result.summary);
+      if (result.suggestedCategory && result.suggestedCategory !== 'General') {
+        setCategory(result.suggestedCategory);
+        setSuggestedCategory(result.suggestedCategory);
+      }
+      if (result.suggestedTags && result.suggestedTags.length > 0) {
+        setTags(result.suggestedTags.join(', '));
+      }
+      onShowToast('AI analysis complete! Auto-filled category, tags, and summary.', 'success');
+    } catch (err) {
+      onShowToast('AI Summarization failed.', 'error');
+    } finally {
+      setIsAiSummarizing(false);
+    }
+  };
 
   const startScanner = async () => {
     setIsCameraLoading(true);
@@ -210,6 +239,7 @@ export default function QuickAdd({
     setHasManualCategoryChange(false);
     setTags('');
     setNote('');
+    setExpiresAt('');
     setFavorite(false);
     setPinned(false);
     setDuplicateMatch(null);
@@ -258,6 +288,7 @@ export default function QuickAdd({
           Category: category,
           Tags: tags.split(',').map(t => t.trim()).filter(Boolean).join(','),
           Note: note.trim(),
+          ExpiresAt: expiresAt || undefined,
           Favorite: favorite,
           Pinned: pinned,
         };
@@ -612,16 +643,44 @@ export default function QuickAdd({
                 </div>
               </div>
 
-              {/* Description Note */}
+              {/* Description Note & AI Summarize */}
               <div className="space-y-1">
-                <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                  Additional Note (Optional description)
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400">
+                    Additional Note / AI Summary
+                  </label>
+                  <button
+                    type="button"
+                    onClick={handleAiSummarize}
+                    disabled={isAiSummarizing || (!content && !title)}
+                    className="flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-600 dark:text-amber-400 rounded-lg transition-all cursor-pointer disabled:opacity-40"
+                  >
+                    {isAiSummarizing ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="w-3 h-3" />
+                    )}
+                    {isAiSummarizing ? 'Analyzing...' : 'AI Auto-Fill & Summarize'}
+                  </button>
+                </div>
                 <input
                   type="text"
-                  placeholder="e.g. useful for the new applet project"
+                  placeholder="e.g. useful reference guide for app development"
                   value={note}
                   onChange={e => setNote(e.target.value)}
+                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden dark:text-white"
+                />
+              </div>
+
+              {/* Expiration Date (Optional) */}
+              <div className="space-y-1">
+                <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
+                  <Calendar className="w-3.5 h-3.5" /> Optional Expiration Date (Reminder)
+                </label>
+                <input
+                  type="date"
+                  value={expiresAt}
+                  onChange={e => setExpiresAt(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden dark:text-white"
                 />
               </div>

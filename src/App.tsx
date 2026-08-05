@@ -915,6 +915,23 @@ export default function App() {
     }
   };
 
+  const handleImportLinks = async (newLinks: Omit<LinkItem, 'ID' | 'CreatedAt' | 'UpdatedAt'>[]) => {
+    setIsLoading(true);
+    try {
+      const createdList: LinkItem[] = [];
+      for (const linkData of newLinks) {
+        const saved = await saveLink(settings, linkData, true);
+        createdList.push(saved);
+      }
+      setLinks(prev => [...createdList, ...prev]);
+      showToast(`Successfully imported ${newLinks.length} bookmarks!`, 'success');
+    } catch (err) {
+      showToast(`Import failed: ${(err as Error).message}`, 'error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Clear Local State Cache
   const handleClearLocalCache = () => {
     clearLocalCache();
@@ -1179,6 +1196,7 @@ export default function App() {
               onShowToast={showToast}
               searchTerm={searchTerm}
               isLoading={isLoading}
+              onImportLinks={handleImportLinks}
             />
           )}
 

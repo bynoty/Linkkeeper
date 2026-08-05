@@ -5,7 +5,7 @@
 export interface LinkItem {
   ID: string;
   Title: string;
-  Content: string;
+  Content: string; // URL
   Category: string;
   Tags: string; // Comma-separated tags
   Note: string;
@@ -13,6 +13,12 @@ export interface LinkItem {
   Pinned: boolean;
   CreatedAt: string;
   UpdatedAt: string;
+  // Extended Features
+  ExpiresAt?: string; // ISO date string YYYY-MM-DD
+  HealthStatus?: 'ok' | 'broken' | 'checking' | 'unknown';
+  StatusCode?: number;
+  LastCheckedAt?: string;
+  AiSummary?: string;
 }
 
 export interface VaultItem {

@@ -1,103 +1,85 @@
-# Implementation Plan: Google Drive / Sheets Persistent Synchronization Strategy
+# Implementation Plan & Technical Architecture: LinkKeeper Knowledge Base
 
 ## 1. Executive Summary / บทสรุปผู้บริหาร
 
-ในการพัฒนาแอปพลิเคชัน **LinkKeeper** การซิงค์ข้อมูลกับ Google Sheets โดยตรงจากฝั่ง Client-side (Browser) จะต้องใช้ **Google OAuth 2.0 Access Token** ซึ่งตามนโยบายความปลอดภัยมาตรฐานของ Google Access Token สำหรับฝั่ง Frontend จะมีอายุการใช้งานสูงสุดเพียง **60 นาที (1 ชั่วโมง)** เมื่อ Token หมดอายุ การเรียกใช้งาน Google Sheets API จะตอบกลับด้วยข้อความผิดพลาด `Status 401 (UNAUTHENTICATED)`
-
-เอกสารนี้รวบรวมรายละเอียดการปรับปรุงระบบซิงค์ข้อมูลที่ได้ดำเนินการแล้ว (**แนวทางที่ 1**) โครงสร้างสถาปัตยกรรมสำหรับระบบซิงค์ถาวรไร้หมดอายุ (**แนวทางที่ 2**) พร้อมทั้งข้อเสนอแนะสำหรับการพัฒนาในระยะถัดไป (**Next Plan**)
+โปรเจกต์ **LinkKeeper Knowledge Base** เป็นเว็บแอปพลิเคชันจัดการลิงก์บุ๊กมาร์ก บันทึกย่อ และรหัสผ่านที่เน้นความปลอดภัย ความเร็ว และความสะดวกในการใช้งาน ล่าสุดได้รับการอัปเกรดระบบการทำงานอย่างครอบคลุม ทั้งในด้าน **การซิงค์ข้อมูลถาวร (Persistent Synchronization)**, **ระบบปัญญาประดิษฐ์ (AI Summarizer & Auto-Tagging)**, **เครื่องมือเซฟลิงก์ใน 1-Click (Bookmarklet & Extension)**, **ระบบนำเข้าบุ๊กมาร์ก (Bookmarks Importer)** และ **ระบบตรวจสอบความสมบูรณ์ของลิงก์ (Broken Link Health Checker)**
 
 ---
 
-## 2. Approach 1 (แนวทางที่ 1 - Implemented in LinkKeeper)
-### Client-Side Smooth OAuth Token Renewal (การต่ออายุ Token แบบ 1-Click โดยไม่ต้อง Sign Out)
+## 2. Implemented Features & Technical Architecture (คุณสมบัติและสถาปัตยกรรมที่พัฒนาเสร็จสมบูรณ์)
 
-#### 2.1 รายละเอียดสิ่งที่ได้ปรับปรุงในโค้ด (Implemented Changes)
-1. **Smooth In-Place Reconnect Button**:
-   - เพิ่มปุ่ม **`Reconnect / Renew Token`** ไว้ข้างๆ ข้อมูลบัญชีผู้ใช้ในหน้าตั้งค่า (Settings) และในป้ายแจ้งเตือนความผิดพลาด (Error Banner)
-   - ผู้ใช้สามารถกดปุ่มเพื่อขอ OAuth Access Token ชุดใหม่จาก Google ได้ทันทีโดย **ไม่ต้องกด Sign Out จากระบบหลัก (Firebase Auth)** ก่อน
-
-2. **Google OAuth Custom Parameters**:
-   - ปรับการตั้งค่า `GoogleAuthProvider` ให้กำหนด `prompt: 'select_account'`
-   - ช่วยให้ Google แสดงหน้าต่างป๊อปอัพเลือกบัญชีและขออนุญาตสิทธิ์อย่างรวดเร็ว (Seamless Popup Flow)
-
-3. **Automated Retry Sync**:
-   - เมื่อผู้ใช้กดต่ออายุ Token และได้รับ Access Token ชุดใหม่สำเร็จ แอปจะทำการเคลียร์ข้อผิดพลาด `googleSyncError` และสั่งรันฟังก์ชัน `handleGoogleSheetsSync` เพื่อซิงค์ข้อมูลต่อโดยอัตโนมัติทันที
-
-4. **Graceful Error Handling & Fallback**:
-   - เมื่อเกิดข้อผิดพลาด `401 UNAUTHENTICATED` ระบบจะเก็บรักษารายการลิงก์และรหัสผ่านไว้ใน Local Browser Cache อย่างปลอดภัย ข้อมูลผู้ใช้ไม่สูญหาย และแสดงป้ายแจ้งเตือนพร้อมปุ่ม Reconnect ใน 1 คลิก
-
----
-
-## 3. Approach 2 (แนวทางที่ 2 - Technical Blueprint)
-### Server-Side Refresh Token Architecture (ระบบซิงค์อัตโนมัติถาวรไร้หมดอายุเบื้องหลัง)
-
-เพื่อแก้ปัญหา Token หมดอายุในระยะยาวโดยที่ผู้ใช้ไม่ต้องกด Reconnect อีกเลย สามารถเลือกปรับปรุงสถาปัตยกรรมระบบเป็น **Server-Side Authorization Flow** ได้ดังนี้:
-
+### 2.1 Google Drive / Sheets Persistent Synchronization & Smooth Token Renewal
+- **Smooth In-Place Reconnect**: เพิ่มปุ่ม `Reconnect / Renew Token` ในหน้า Settings และ Error Banner ช่วยให้ผู้ใช้ต่ออายุ OAuth Access Token ที่หมดอายุ (อายุ 1 ชั่วโมง) ได้ทันทีโดย **ไม่ต้อง Sign Out จากระบบหลัก**
+- **OAuth Prompt Parameter**: กำหนด `prompt: 'select_account'` ใน `GoogleAuthProvider` เพื่อให้สลับ/ยืนยันสิทธิ์ได้อย่างรวดเร็ว
+- **Automated Sync Retry & Offline Cache**: เมื่อได้รับ Token ใหม่สำเร็จ ระบบจะเรียกซิงค์ Google Sheets ต่อทันที และเก็บสำรองข้อมูลใน Local Browser Cache ป้องกันข้อมูลสูญหายเมื่อเครือข่ายหลุด
+- **Architecture Diagram**:
 ```
-[ Browser / Frontend ] 
-       │
-       ▼ (1) Request Sync
-[ Node.js Backend Server / Cloud Function ] 
-       │
-       ├── (2) Check Access Token
-       ├── (3) If Expired -> Send Refresh Token to Google OAuth Server
-       │                           │
-       │                   [ Google OAuth Server ]
-       │                           │ Returns fresh Access Token
-       │                           ▼
-       └── (4) Query Google Sheets API using fresh Access Token
-               │
-               ▼
-[ User's Google Sheet Spreadsheet ]
+[ Frontend (React + Vite) ] ──(401 Token Expired)──> [ Error Banner / Reconnect Button ]
+          │                                                       │
+          ▼                                                       ▼
+[ Local Browser Cache ] <──(Save Offline Backup)─── [ Google OAuth Popup (Prompt) ]
 ```
 
-#### 3.1 การทำงานของ OAuth 2.0 Refresh Token
-1. **OAuth Offline Access Scope**:
-   - ฝั่ง Backend จะส่งคำขอการยืนยันตัวตนไปยัง Google OAuth Authorization Code Flow โดยระบุ `access_type=offline` และ `prompt=consent`
-2. **การรับ Refresh Token**:
-   - ในการเข้าใช้งานครั้งแรก Google จะส่งคืนทั้ง `access_token` (อายุ 1 ชั่วโมง) และ **`refresh_token`** (ไม่มีวันหมดอายุ จนกว่าผู้ใช้จะยกเลิกสิทธิ์)
-3. **การจัดเก็บความปลอดภัย**:
-   - บันทึก `refresh_token` ไว้ในส่วนที่มีความปลอดภัยสูง เช่น **Google Cloud Secret Manager** หรือ **Firestore Database (Server-side Rule Protected)**
+---
 
-#### 3.2 การแลกเปลี่ยน Access Token อัตโนมัติ (Automated Background Refresh)
-- เมื่อ Backend ต้องการอ่าน/เขียนข้อมูลลง Google Sheets จะทำการตรวจสอบอายุของ Access Token
-- หากหมดอายุ Backend จะส่ง `refresh_token` ไปที่ `https://oauth2.googleapis.com/token` เพื่อรับ Access Token ใหม่เบื้องหลังในระดับ milliseconds โดยผู้ใช้ไม่ต้องโต้ตอบกับป๊อปอัพใดๆ
-
-#### 3.3 ทางเลือกเสริม: Google Service Account Integration
-- สร้าง **Google Service Account** ใน Google Cloud Console
-- ให้ Email ของ Service Account สิทธิ์เป็น Editor ใน Google Sheet ของผู้ใช้
-- แอปจะสามารถเชื่อมต่อ Google Sheets API ได้ตลอด 24 ชั่วโมง โดยไม่ต้องอิงกับ Session การล็อกอินของผู้ใช้เลย
+### 2.2 AI-Powered Link Summarizer & Auto-Tagging
+- **Gemini AI Integration (`gemini-2.5-flash`)**: ทำงานผ่าน Express Server (`/api/ai-summarize`) ใช้ไลบรารี `@google/genai`
+- **Smart Analysis**: วิเคราะห์ URL, Title และ Note ของลิงก์ แล้วสรุปเนื้อหาเป็นข้อความกระชับ 1-2 ประโยค (ไทย/อังกฤษ) พร้อมคัดเลือกหมวดหมู่ (Category) และแท็ก (Tags) ที่เหมาะสมโดยอัตโนมัติ
+- **Heuristic Fallback Engine**: มีระบบ Fallback ภายในตัวเพื่อวิเคราะห์ URL/Domain และคีย์เวิร์ดเบื้องหลัง เมื่อไม่ได้ตั้งค่า API Key หรือขณะออฟไลน์
+- **UI Button**: ปุ่ม `AI Auto-Fill & Summarize` ในหน้าต่าง QuickAdd พร้อมไอคอนและสถานะ Loading
 
 ---
 
-## 4. Recommendations for Next Plan (แผนการพัฒนาและข้อเสนอแนะขั้นถัดไป)
-
-ขอแนะนำแผนพัฒนาในระยะถัดไป (Next Plan Roadmap) สำหรับแอปพลิเคชัน LinkKeeper เพื่อยกระดับความเสถียรและความปลอดภัย:
-
-### 🚀 Next Plan Item 1: Real-time Cloud Persistence with Firestore (Primary Database)
-- **แนวทาง**: ใช้ **Firebase Firestore** เป็นฐานข้อมูลหลักของแอปพลิเคชัน
-- **ประโยชน์**:
-  - การบันทึกและอ่านข้อมูลลิงก์/รหัสผ่านจะเกิดผลทันทีในระดับ milliseconds (Real-time Multi-device Sync)
-  - ไม่ต้องพึ่งพา OAuth Scope หรือปัญหาสิทธิ์หมดอายุของ Google Sheets สำหรับการใช้งานประจำวัน
-  - ใช้ Google Sheets เป็นเพียง **Destination สำหรับการ Backup / Export ข้อมูลรายสัปดาห์**
-
-### 📁 Next Plan Item 2: Google Drive AppData Folder Scope (`drive.appdata`)
-- **แนวทาง**: เปลี่ยนตำแหน่งการบันทึกไฟล์ Spreadsheet จากโฟลเดอร์หลักของผู้ใช้ ไปยัง **Application Data Folder** ของ Google Drive
-- **ประโยชน์**:
-  - ไฟล์ฐานข้อมูลจะถูกซ่อนไว้ในโฟลเดอร์แอปโดยเฉพาะ ไม่เกะกะโฟลเดอร์หลักของผู้ใช้
-  - ป้องกันผู้ใช้เผลอลบหรือแก้ไขโครงสร้างตารางโดยไม่ตั้งใจ
-
-### 🔔 Next Plan Item 3: Automatic Interceptor & Silent Renew Modal
-- **แนวทาง**: สร้าง Axios / Fetch Interceptor ในฝั่ง Frontend
-- **ประโยชน์**:
-  - เมื่อระบบตรวจพบ response status 401 ในระหว่างการทำงาน จะแสดง Modal ขนาดเล็กแจ้งเตือน "Google Session Refresh Required" พร้อมปุ่มกด Renew ทันทีโดยไม่ตัดการทำงานของหน้าปัจจุบัน
-
-### 🛠️ Next Plan Item 4: Serverless API Endpoint (`/api/sync`)
-- **แนวทาง**: สร้าง Serverless Cloud Function หรือ Express Proxy Route สำหรับซิงค์ Google Sheets
-- **ประโยชน์**:
-  - ซ่อนการเรียกใช้ API Keys และจัดการ Refresh Token บน Server สอดคล้องกับแนวทางสถาปัตยกรรมแบบ Full-stack (Server + Client)
+### 2.3 1-Click Quick Saver Tools (Bookmarklet & Chrome/Edge Web Extension)
+- **Drag-and-Drop Bookmarklet**: โค้ด JavaScript สำหรับลากวางลงบน **Bookmarks Bar** ของเบราว์เซอร์ เมื่อผู้ใช้อยู่ที่หน้าเว็บใดก็ตาม แล้วกดบุ๊กมาร์กนี้ จะเปิด LinkKeeper พร้อมบันทึก URL และ Title ของหน้านั้นๆ ทันที
+- **Chrome / Edge Extension Generator**: ระบบสร้างและดาวน์โหลดไฟล์ `manifest.json` (Manifest V3) และ `popup.html` เพื่อให้นำไปติดตั้งเป็น Web Extension (Developer Mode) ใน Chrome หรือ Edge ได้ทันที
+- **URL Parameter Handler**: รองรับการรับค่าผ่าน Query Parameters `?add_url=...&add_title=...`
 
 ---
 
-**สรุปการดำเนินการ**:
-ขณะนี้ LinkKeeper ได้รับการอัปเดตตาม **แนวทางที่ 1** เรียบร้อยแล้ว ผู้ใช้สามารถใช้งานปุ่ม **`Reconnect / Renew Token`** เพื่อต่ออายุการซิงค์ข้อมูลได้ทันทีแบบ 1-Click โดยไม่ต้องกด Sign Out
+### 2.4 Browser Bookmarks Importer & Canonical Deduplication
+- **Multi-Format Support**: นำเข้าไฟล์บุ๊กมาร์กทั้งรูปแบบ Netscape HTML (`.html`) ที่ส่งออกจาก Chrome, Safari, Firefox, Edge และรูปแบบ LinkKeeper JSON
+- **Folder Hierarchy Parsing**: ดึงโครงสร้างโฟลเดอร์จากไฟล์ HTML มาแปลงเป็นหมวดหมู่ (Categories) ใน LinkKeeper โดยอัตโนมัติ
+- **Canonical URL Normalization**: ระบบตัดโปรโตคอล (`https://`), `www.` และพารามิเตอร์ติดตาม (`utm_source`, `utm_medium`, `ref`) เพื่อตรวจจับลิงก์ซ้ำ (Duplicates) ก่อนนำเข้า
+- **Interactive Import Modal**: มีป้ายสถานะ `Existing` เตือนลิงก์ซ้ำ และตัวเลือก `Select All / Deselect All`
+
+---
+
+### 2.5 Broken Link & Site Health Checker
+- **Server Proxy Endpoint (`/api/check-link`)**: ให้ Express Server ทำหน้าที่ส่งคำขอ `HEAD` และ `GET` (พร้อม Timeout 6 วินาที และ User-Agent) ไปยังเว็บไซต์ปลายทาง เพื่อหลีกเลี่ยงปัญหา CORS บนเบราว์เซอร์
+- **Batch Health Scanner**: ปุ่ม `Check Site Health` ในหน้า Dashboard ที่ส่งตรวจสอบสถานะของทุกลิงก์พร้อมแสดง Progress Counter สด
+- **Real-Time Badges**: แสดงป้ายสถานะ `Live (200)` สีเขียว หรือ `Broken (404/500/Timeout)` สีแดง บนการ์ดลิงก์อย่างชัดเจน
+
+---
+
+### 2.6 Link Expiration & Reminder System
+- **Expiration Date Picker**: ช่องเลือกวันที่หมดอายุ/วันแจ้งเตือน (`ExpiresAt`) ในหน้า QuickAdd และแบบฟอร์มแก้ไข
+- **Expiring Badges & Warning Banner**: ป้ายสถานะ `Expired` หรือ `Expiring (Xd)` พร้อมเอฟเฟกต์กะพริบแจ้งเตือน และแบนเนอร์แจ้งเตือนส่วนบนพร้อมปุ่มกรองดูเฉพาะลิงก์ที่กำลังจะหมดอายุ
+
+---
+
+## 3. Performance & Impact Analysis (การวิเคราะห์ประสิทธิภาพและความลื่นไหล)
+
+| คุณสมบัติ (Feature) | ระยะเวลาพัฒนา (Estimate Time) | ผลกระทบต่อความเร็วแอป (Performance Impact) | เทคนิคการป้องการหน่วง (Optimization Technique) |
+|---|---|---|---|
+| **1. Smooth OAuth Renewal** | สำเร็จ (Completed) | **ไม่มีผลกระทบ (0ms)** | ทำงานเฉพาะเมื่อกด Reconnect |
+| **2. AI Link Summarizer** | สำเร็จ (Completed) | **ลื่นไหล (Fast)** | ประมวลผลแบบ Async เบื้องหลังผ่าน Express Backend |
+| **3. Bookmarklet & Extension** | สำเร็จ (Completed) | **ไม่มีผลกระทบ (0ms)** | โค้ดฝั่ง Client มีขนาดเล็กเบามาก (<2KB) |
+| **4. Bookmarks Importer** | สำเร็จ (Completed) | **ไม่มีผลกระทบ (0ms)** | ใช้ DOMParser แปลงไฟล์ฝั่ง Browser ในเวลาไม่กี่ ms |
+| **5. Site Health Checker** | สำเร็จ (Completed) | **ลื่นไหล (Controlled)** | ยิงตรวจสอบแบบ Async ทีละรายการพร้อม AbortController Timeout (6s) |
+| **6. Link Expiration** | สำเร็จ (Completed) | **ไม่มีผลกระทบ (0ms)** | คำนวณความต่างวันใน Memory ผ่าน `useMemo` |
+
+---
+
+## 4. Next Plan Roadmap (แผนการพัฒนาในอนาคต)
+
+1. **Firestore Primary Database Sync**:
+   - ปรับเปลี่ยนโครงสร้างฐานข้อมูลหลักเป็น Firebase Firestore เพื่อความเร็วระดับ Real-time Sync ข้ามอุปกรณ์ โดยใช้ Google Sheets เป็นเพียงช่องทาง Backup รายสัปดาห์
+2. **Google Drive AppData Folder Scope (`drive.appdata`)**:
+   - จัดเก็บไฟล์ Spreadsheet ไว้ในโฟลเดอร์ซ่อนเฉพาะของแอปใน Google Drive เพื่อป้องกันผู้ใช้ลบหรือแก้ไขไฟล์ผิดโดยไม่ตั้งใจ
+3. **Automated Background Cron Health Check**:
+   - ระบบตั้งเวลาตรวจสุขภาพลิงก์อัตโนมัติในเบื้องหลังสัปดาห์ละ 1 ครั้ง และแจ้งเตือนผ่าน Email หรือ Notification Banner
+
+---
+*เอกสารนี้ได้รับการปรับปรุงล่าสุดให้ครอบคลุมการทำงานจริงทั้งหมดของระบบ LinkKeeper Knowledge Base*
+
