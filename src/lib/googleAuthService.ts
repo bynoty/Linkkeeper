@@ -10,6 +10,9 @@ const provider = new GoogleAuthProvider();
 // Request Google Sheets and Google Drive (file-level) scopes
 provider.addScope('https://www.googleapis.com/auth/spreadsheets');
 provider.addScope('https://www.googleapis.com/auth/drive.file');
+provider.setCustomParameters({
+  prompt: 'select_account',
+});
 
 let isSigningIn = false;
 let cachedAccessToken: string | null = null;

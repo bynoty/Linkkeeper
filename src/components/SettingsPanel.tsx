@@ -785,14 +785,24 @@ export default function SettingsPanel({
                       <p className="text-[10px] text-zinc-400 font-medium">Signed in with Google Auth</p>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={onGoogleLogout}
-                    className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
-                    title="Sign Out"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={onGoogleSignIn}
+                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-semibold rounded-lg transition-all flex items-center gap-1 cursor-pointer shadow-xs"
+                      title="Renew Google Token without signing out"
+                    >
+                      <RefreshCw className="w-3 h-3" /> Reconnect / Renew Token
+                    </button>
+                    <button
+                      type="button"
+                      onClick={onGoogleLogout}
+                      className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg transition-colors cursor-pointer"
+                      title="Sign Out"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
                 <div className="border-t border-zinc-100 dark:border-zinc-800/60 pt-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
@@ -883,8 +893,17 @@ export default function SettingsPanel({
                   </div>
 
                   {googleSyncError && (
-                    <div className="p-3 bg-red-500/5 border border-red-500/10 rounded-xl space-y-1">
-                      <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider block">Google Sheets API Error Details</span>
+                    <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider block">Google Sheets API Error Details</span>
+                        <button
+                          type="button"
+                          onClick={onGoogleSignIn}
+                          className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold rounded-lg shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                        >
+                          <RefreshCw className="w-3 h-3" /> Reconnect / Renew Token
+                        </button>
+                      </div>
                       <p className="text-[11px] font-mono text-red-800 dark:text-red-300 break-all select-text leading-relaxed whitespace-pre-wrap">
                         {googleSyncError}
                       </p>
