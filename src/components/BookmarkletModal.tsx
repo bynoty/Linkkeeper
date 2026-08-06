@@ -80,16 +80,17 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
 <head>
   <meta charset="utf-8">
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; width: 320px; padding: 16px; margin: 0; background: #09090b; color: #f4f4f5; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; width: 320px; padding: 16px; margin: 0; background: #09090b; color: #f4f4f5; box-sizing: border-box; }
     .header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-    .icon { width: 34px; height: 34px; background: rgba(16, 185, 129, 0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    .icon { width: 36px; height: 36px; background: rgba(16, 185, 129, 0.2); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; border: 1px solid rgba(16, 185, 129, 0.3); }
     h3 { font-size: 15px; margin: 0; color: #10b981; font-weight: 700; }
     p { font-size: 12px; color: #a1a1aa; margin: 0 0 14px; line-height: 1.4; }
-    .card { background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 10px; margin-bottom: 14px; font-size: 11px; }
+    .card { background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 10px 12px; margin-bottom: 14px; font-size: 11px; }
     .title { font-weight: 600; color: #e4e4e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
-    .url { color: #71717a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .url { color: #10b981; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.9; font-family: monospace; font-size: 10px; }
     button { width: 100%; padding: 11px; background: #059669; color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s; }
     button:hover { background: #10b981; }
+    button:active { transform: scale(0.98); }
   </style>
 </head>
 <body>
@@ -108,26 +109,54 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
   <button id="saveBtn">
     <span>➕ Save Webpage to LinkKeeper</span>
   </button>
-  <script>
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]) {
-        document.getElementById('pageTitle').textContent = tabs[0].title || 'Untitled Page';
-        document.getElementById('pageUrl').textContent = tabs[0].url || '';
-        document.getElementById('saveBtn').addEventListener('click', () => {
-          const u = encodeURIComponent(tabs[0].url || '');
-          const t = encodeURIComponent(tabs[0].title || '');
-          window.open('${currentOrigin}/?add_url=' + u + '&add_title=' + t, '_blank');
-        });
-      }
-    });
-  </script>
+  <script src="popup.js"></script>
 </body>
 </html>`;
+
+      const popupJs = `document.addEventListener('DOMContentLoaded', () => {
+  if (typeof chrome !== 'undefined' && chrome.tabs && chrome.tabs.query) {
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs && tabs[0]) {
+        const activeTab = tabs[0];
+        const pageTitle = activeTab.title || 'Untitled Page';
+        const pageUrl = activeTab.url || '';
+
+        const titleEl = document.getElementById('pageTitle');
+        const urlEl = document.getElementById('pageUrl');
+        const saveBtn = document.getElementById('saveBtn');
+
+        if (titleEl) titleEl.textContent = pageTitle;
+        if (urlEl) urlEl.textContent = pageUrl;
+
+        if (saveBtn) {
+          saveBtn.addEventListener('click', () => {
+            const u = encodeURIComponent(pageUrl);
+            const t = encodeURIComponent(pageTitle);
+            const targetUrl = '${currentOrigin}/?add_url=' + u + '&add_title=' + t;
+            if (chrome.tabs && chrome.tabs.create) {
+              chrome.tabs.create({ url: targetUrl });
+            } else {
+              window.open(targetUrl, '_blank');
+            }
+          });
+        }
+      }
+    });
+  } else {
+    const saveBtn = document.getElementById('saveBtn');
+    if (saveBtn) {
+      saveBtn.addEventListener('click', () => {
+        window.open('${currentOrigin}', '_blank');
+      });
+    }
+  }
+});`;
 
       const iconBlob = await generateExtensionIconBlob();
 
       zip.file("manifest.json", JSON.stringify(manifest, null, 2));
       zip.file("popup.html", popupHtml);
+      zip.file("popup.js", popupJs);
       zip.file("icon128.png", iconBlob);
 
       const zipContent = await zip.generateAsync({ type: "blob" });

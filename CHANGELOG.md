@@ -4,6 +4,16 @@ All notable changes to the **LinkKeeper Knowledge Base** project will be documen
 
 ---
 
+## [2.1.2] - 2026-08-06 (Chrome Extension MV3 Popup CSP Fix)
+
+### 🐛 Fixed (การแก้ไขข้อผิดพลาด)
+- **Manifest V3 Inline Script Violation Fix (แก้ไขปุ่ม Extension ไม่ตรวจจับชื่อเว็บ/กดแล้วไม่ทำงาน)**:
+  - แก้ไขสาเหตุที่ Chrome Extension ค้างอยู่ที่ `"Detecting tab title..."` และกดปุ่ม `➕ Save Webpage to LinkKeeper` แล้วไม่มีอะไรเกิดขึ้น
+  - **สาเหตุ:** นโยบายความปลอดภัย Content Security Policy (CSP) ของ Chrome Extension Manifest V3 ไม่อนุญาตให้ใช้ Inline `<script>` code ร่วมกับ `popup.html`
+  - **การแก้ไข:** แยก Logic Script ทั้งหมดออกเป็นไฟล์ `popup.js` ภายในแพ็กเกจ ZIP และเรียกใช้ผ่าน `<script src="popup.js"></script>` พร้อมปรับเปลี่ยนคำสั่งเปิดแท็บเป็น `chrome.tabs.create()` เพื่อให้ตรวจจับ URL และ Title ของหน้าเว็บที่กำลังเปิดอยู่ได้อย่างแม่นยำ 100%
+
+---
+
 ## [2.1.1] - 2026-08-06 (Chrome Web Extension Zip Package & Quick Saver Prefill Fix)
 
 ### 🐛 Fixed (การแก้ไขข้อผิดพลาด)
