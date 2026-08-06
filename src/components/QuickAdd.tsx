@@ -34,6 +34,8 @@ interface QuickAddProps {
   onShowToast: (msg: string, type: 'success' | 'info' | 'warning' | 'error') => void;
   masterPasswordHash?: string;
   onNavigateToTab: (tab: 'dashboard' | 'vault' | 'quick-add' | 'settings') => void;
+  initialUrl?: string;
+  initialTitle?: string;
 }
 
 type QuickType = 'link' | 'note' | 'credential';
@@ -46,6 +48,8 @@ export default function QuickAdd({
   onShowToast,
   masterPasswordHash,
   onNavigateToTab,
+  initialUrl,
+  initialTitle,
 }: QuickAddProps) {
   const [activeType, setActiveType] = useState<QuickType>('link');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -64,6 +68,27 @@ export default function QuickAdd({
   const [pinned, setPinned] = useState(false);
   const [duplicateMatch, setDuplicateMatch] = useState<LinkItem | null>(null);
   const [showDuplicateConfirm, setShowDuplicateConfirm] = useState(false);
+
+  // Prefill initial URL and Title from Quick Saver (Bookmarklet or Extension)
+  useEffect(() => {
+    if (initialUrl) {
+      setActiveType('link');
+      setContent(initialUrl);
+      if (initialTitle) {
+        setTitle(initialTitle);
+      }
+      const suggested = suggestCategoryFromUrl(initialUrl);
+      setCategory(suggested);
+      setSuggestedCategory(suggested);
+
+      // Check for duplicate link
+      const match = findDuplicateLink(initialUrl, links);
+      if (match) {
+        setDuplicateMatch(match);
+        setShowDuplicateConfirm(true);
+      }
+    }
+  }, [initialUrl, initialTitle]);
 
   // Form States - Credential
   const [service, setService] = useState('');

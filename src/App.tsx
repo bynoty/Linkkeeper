@@ -97,6 +97,7 @@ export default function App() {
 
   // Google Sheets Direct Sync Diagnostics & Logging
   const [googleSyncLogs, setGoogleSyncLogs] = useState<string[]>([]);
+  const [initialQuickAddData, setInitialQuickAddData] = useState<{ url?: string; title?: string } | null>(null);
   const [lastGoogleSyncTime, setLastGoogleSyncTime] = useState<string | null>(() => {
     try {
       return localStorage.getItem('link_keeper_last_google_sync_time');
@@ -150,6 +151,28 @@ export default function App() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
     };
+  }, []);
+
+  // Handle Quick Saver URL parameters (from Bookmarklet or Chrome Web Extension)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const addUrl = params.get('add_url') || params.get('url');
+      const addTitle = params.get('add_title') || params.get('title');
+
+      if (addUrl) {
+        const decodedUrl = decodeURIComponent(addUrl);
+        const decodedTitle = addTitle ? decodeURIComponent(addTitle) : '';
+        setInitialQuickAddData({ url: decodedUrl, title: decodedTitle });
+        setActiveTab('quick-add');
+        showToast('📌 Received link from Quick Saver! Review and click Save.', 'success');
+
+        // Clean URL parameters without refreshing page
+        window.history.replaceState({}, document.title, window.location.pathname);
+      }
+    } catch (e) {
+      console.error('Failed to parse Quick Saver URL params:', e);
+    }
   }, []);
 
   // Automatically trigger sync when coming online if sync is pending
@@ -1368,6 +1391,8 @@ export default function App() {
               onShowToast={showToast}
               masterPasswordHash={settings.masterPasswordHash}
               onNavigateToTab={(tab) => startTransition(() => setActiveTab(tab))}
+              initialUrl={initialQuickAddData?.url}
+              initialTitle={initialQuickAddData?.title}
             />
           )}
 

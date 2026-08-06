@@ -4,6 +4,20 @@ All notable changes to the **LinkKeeper Knowledge Base** project will be documen
 
 ---
 
+## [2.1.1] - 2026-08-06 (Chrome Web Extension Zip Package & Quick Saver Prefill Fix)
+
+### 🐛 Fixed (การแก้ไขข้อผิดพลาด)
+- **Chrome Extension Manifest V3 Icon Path Fix**:
+  - แก้ไขปัญหา `Invalid value for 'icons["128"]'. Could not load manifest.` ใน Chrome / Edge Developer mode
+  - เปลี่ยนโครงสร้าง `manifest.json` จากเดิมที่อ้างอิง URL ภายนอก เป็นไฟล์ไอคอนในโฟลเดอร์ส่วนขยาย (`icon128.png`)
+  - เพิ่มระบบสร้างแพ็กเกจ **`LinkKeeperExtension.zip`** อัตโนมัติใน 1-Click (ใช้ `JSZip`) เมื่อแตกไฟล์ ZIP แล้วสามารถนำไปโหลดใน `chrome://extensions` ได้ทันทีโดยไม่พบข้อผิดพลาด
+
+- **Bookmarklet & Extension Auto-Prefill Handling**:
+  - เพิ่มระบบรองรับ Parameter `add_url` และ `add_title` จาก URL Search Query
+  - เมื่อผู้ใช้กดปุ่ม **Save to LinkKeeper** จาก Bookmarklet หรือ Chrome Extension ระบบจะเปิดหน้า **Quick Add** พร้อมกรอก URL, ชื่อเว็บ (Title), แนะนำหมวดหมู่อัตโนมัติ (Category Suggestion), และตรวจสอบลิงก์ซ้ำให้อย่างราบรื่น
+
+---
+
 ## [2.1.0] - 2026-08-05 (Auto Weekly Backup & Explicit Status Badges)
 
 ### 🚀 Added (ฟีเจอร์ใหม่)

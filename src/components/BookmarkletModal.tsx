@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { X, Bookmark, Download, Copy, Check, Sparkles, ExternalLink, ShieldCheck, Chrome } from 'lucide-react';
+import JSZip from 'jszip';
+import { X, Bookmark, Download, Copy, Check, Sparkles, ExternalLink, ShieldCheck, Chrome, FolderArchive } from 'lucide-react';
 
 interface BookmarkletModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
   appUrl,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [isGeneratingZip, setIsGeneratingZip] = useState(false);
   const [activeTab, setActiveTab] = useState<'bookmarklet' | 'extension'>('bookmarklet');
 
   if (!isOpen) return null;
@@ -28,68 +30,118 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const handleDownloadExtensionFiles = () => {
-    const manifest = {
-      manifest_version: 3,
-      name: "LinkKeeper - Quick Link Saver",
-      version: "1.0.0",
-      description: "Save any web page directly to your LinkKeeper Knowledge Base in 1-click.",
-      permissions: ["activeTab", "contextMenus"],
-      action: {
-        default_title: "Save to LinkKeeper",
-        default_popup: "popup.html"
-      },
-      icons: {
-        "128": "https://img.icons8.com/fluency/192/safe-key.png"
-      }
-    };
+  const generateExtensionIconBlob = (): Promise<Blob> => {
+    return new Promise((resolve) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 128;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.fillStyle = '#059669';
+        ctx.beginPath();
+        ctx.roundRect(0, 0, 128, 128, 28);
+        ctx.fill();
 
-    const popupHtml = `<!DOCTYPE html>
+        ctx.fillStyle = '#ffffff';
+        ctx.font = '64px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('🔖', 64, 64);
+      }
+      canvas.toBlob((blob) => {
+        resolve(blob || new Blob([]));
+      }, 'image/png');
+    });
+  };
+
+  const handleDownloadZip = async () => {
+    setIsGeneratingZip(true);
+    try {
+      const zip = new JSZip();
+
+      const manifest = {
+        manifest_version: 3,
+        name: "LinkKeeper - Quick Link Saver",
+        version: "1.0.0",
+        description: "Save any web page directly to your LinkKeeper Knowledge Base in 1-click.",
+        permissions: ["activeTab"],
+        action: {
+          default_title: "Save to LinkKeeper",
+          default_popup: "popup.html",
+          default_icon: "icon128.png"
+        },
+        icons: {
+          "128": "icon128.png"
+        }
+      };
+
+      const popupHtml = `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
   <style>
-    body { font-family: system-ui, sans-serif; width: 320px; padding: 16px; margin: 0; background: #09090b; color: #f4f4f5; }
-    h3 { font-size: 14px; margin: 0 0 8px; color: #10b981; display: flex; align-items: center; gap: 6px; }
-    button { width: 100%; padding: 10px; background: #059669; color: white; border: none; border-radius: 8px; font-weight: 600; cursor: pointer; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; width: 320px; padding: 16px; margin: 0; background: #09090b; color: #f4f4f5; }
+    .header { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .icon { width: 34px; height: 34px; background: rgba(16, 185, 129, 0.2); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+    h3 { font-size: 15px; margin: 0; color: #10b981; font-weight: 700; }
+    p { font-size: 12px; color: #a1a1aa; margin: 0 0 14px; line-height: 1.4; }
+    .card { background: #18181b; border: 1px solid #27272a; border-radius: 10px; padding: 10px; margin-bottom: 14px; font-size: 11px; }
+    .title { font-weight: 600; color: #e4e4e7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 4px; }
+    .url { color: #71717a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    button { width: 100%; padding: 11px; background: #059669; color: white; border: none; border-radius: 10px; font-weight: 700; font-size: 13px; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: background 0.2s; }
     button:hover { background: #10b981; }
   </style>
 </head>
 <body>
-  <h3>🔑 LinkKeeper Quick Save</h3>
-  <p style="font-size: 12px; color: #a1a1aa; margin-bottom: 12px;">Save the current active tab to your LinkKeeper dashboard.</p>
-  <button id="saveBtn">Save Current Webpage</button>
+  <div class="header">
+    <div class="icon">🔖</div>
+    <div>
+      <h3>LinkKeeper Saver</h3>
+      <div style="font-size:10px; color:#71717a;">Web Extension</div>
+    </div>
+  </div>
+  <p>Save active browser page to your LinkKeeper Knowledge Base.</p>
+  <div class="card">
+    <div class="title" id="pageTitle">Detecting tab title...</div>
+    <div class="url" id="pageUrl">...</div>
+  </div>
+  <button id="saveBtn">
+    <span>➕ Save Webpage to LinkKeeper</span>
+  </button>
   <script>
-    document.getElementById('saveBtn').addEventListener('click', () => {
-      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-        if (tabs[0]) {
-          const u = encodeURIComponent(tabs[0].url);
-          const t = encodeURIComponent(tabs[0].title);
+    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+      if (tabs[0]) {
+        document.getElementById('pageTitle').textContent = tabs[0].title || 'Untitled Page';
+        document.getElementById('pageUrl').textContent = tabs[0].url || '';
+        document.getElementById('saveBtn').addEventListener('click', () => {
+          const u = encodeURIComponent(tabs[0].url || '');
+          const t = encodeURIComponent(tabs[0].title || '');
           window.open('${currentOrigin}/?add_url=' + u + '&add_title=' + t, '_blank');
-        }
-      });
+        });
+      }
     });
   </script>
 </body>
 </html>`;
 
-    // Trigger download of Manifest JSON
-    const blob = new Blob([JSON.stringify(manifest, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'manifest.json';
-    a.click();
-    URL.revokeObjectURL(url);
+      const iconBlob = await generateExtensionIconBlob();
 
-    // Trigger download of Popup HTML
-    const blobHtml = new Blob([popupHtml], { type: 'text/html' });
-    const urlHtml = URL.createObjectURL(blobHtml);
-    const aHtml = document.createElement('a');
-    aHtml.href = urlHtml;
-    aHtml.download = 'popup.html';
-    aHtml.click();
-    URL.revokeObjectURL(urlHtml);
+      zip.file("manifest.json", JSON.stringify(manifest, null, 2));
+      zip.file("popup.html", popupHtml);
+      zip.file("icon128.png", iconBlob);
+
+      const zipContent = await zip.generateAsync({ type: "blob" });
+      const zipUrl = URL.createObjectURL(zipContent);
+      const a = document.createElement('a');
+      a.href = zipUrl;
+      a.download = 'LinkKeeperExtension.zip';
+      a.click();
+      URL.revokeObjectURL(zipUrl);
+    } catch (err) {
+      console.error('Failed to generate extension ZIP:', err);
+    } finally {
+      setIsGeneratingZip(false);
+    }
   };
 
   return (
@@ -113,7 +165,7 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            className="p-1.5 text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-200 rounded-lg hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -124,7 +176,7 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('bookmarklet')}
-            className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === 'bookmarklet'
                 ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
                 : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
@@ -135,7 +187,7 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
           <button
             type="button"
             onClick={() => setActiveTab('extension')}
-            className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 ${
+            className={`flex-1 py-1.5 rounded-lg transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
               activeTab === 'extension'
                 ? 'bg-white dark:bg-zinc-900 text-emerald-600 dark:text-emerald-400 shadow-xs'
                 : 'text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200'
@@ -151,7 +203,7 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
             <div className="space-y-4">
               <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-xl text-center space-y-3">
                 <p className="text-xs font-medium text-emerald-800 dark:text-emerald-300">
-                  Drag the button below directly into your Browser's <strong>Bookmarks Bar</strong>:
+                  Drag the button below directly into your Browser's <strong>Bookmarks Bar (แถบบุ๊กมาร์ก)</strong>:
                 </p>
                 <div className="pt-1 pb-2">
                   <a
@@ -192,25 +244,27 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
             </div>
           ) : (
             <div className="space-y-3 text-xs">
-              <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-2">
+              <div className="p-3.5 bg-zinc-50 dark:bg-zinc-800/50 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-2.5">
                 <h4 className="font-bold text-zinc-900 dark:text-zinc-100 flex items-center gap-1.5">
-                  <ShieldCheck className="w-4 h-4 text-emerald-500" /> Custom Chrome/Edge Web Extension
+                  <ShieldCheck className="w-4 h-4 text-emerald-500" /> Custom Chrome/Edge Web Extension Setup
                 </h4>
-                <ol className="list-decimal list-inside space-y-1 text-zinc-600 dark:text-zinc-300 text-[11px]">
-                  <li>Click <strong>Download Extension Files</strong> below to get `manifest.json` & `popup.html`.</li>
-                  <li>Put both files into a new folder named `LinkKeeperExtension`.</li>
-                  <li>Open <code>chrome://extensions</code> in your Chrome or Edge browser.</li>
-                  <li>Enable <strong>Developer mode</strong> in the top right corner.</li>
-                  <li>Click <strong>Load unpacked</strong> and select your `LinkKeeperExtension` folder!</li>
+                <ol className="list-decimal list-inside space-y-1.5 text-zinc-600 dark:text-zinc-300 text-[11px] leading-relaxed">
+                  <li>Click <strong>Download LinkKeeperExtension.zip</strong> below.</li>
+                  <li>Extract (แตกไฟล์) the ZIP into a folder named <code>LinkKeeperExtension</code>.</li>
+                  <li>Open <code>chrome://extensions</code> in Chrome or <code>edge://extensions</code> in Edge.</li>
+                  <li>Turn ON <strong>Developer mode (โหมดนักพัฒนา)</strong> in the top right corner.</li>
+                  <li>Click <strong>Load unpacked (โหลดส่วนขยายที่แยกไว้)</strong> and select the <code>LinkKeeperExtension</code> folder!</li>
                 </ol>
               </div>
 
               <button
                 type="button"
-                onClick={handleDownloadExtensionFiles}
-                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer"
+                onClick={handleDownloadZip}
+                disabled={isGeneratingZip}
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 text-white font-bold rounded-xl shadow-xs transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
               >
-                <Download className="w-4 h-4" /> Download Chrome Extension Files
+                <FolderArchive className="w-4 h-4" />
+                {isGeneratingZip ? 'Generating Zip Package...' : 'Download LinkKeeperExtension.zip'}
               </button>
             </div>
           )}
@@ -231,3 +285,4 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
     </div>
   );
 };
+
