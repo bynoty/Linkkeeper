@@ -10,6 +10,17 @@ import {
   logout as googleLogout,
   clearTokenCache
 } from './lib/googleAuthService';
+import {
+  subscribeUserLinks,
+  subscribeUserVault,
+  saveLinkToFirestore,
+  deleteLinkFromFirestore,
+  batchSaveLinksToFirestore,
+  saveVaultToFirestore,
+  deleteVaultFromFirestore,
+  batchSaveVaultToFirestore,
+  saveSettingsToFirestore
+} from './lib/firestoreService';
 import { 
   findSpreadsheet, 
   createSpreadsheet, 
@@ -55,6 +66,7 @@ import {
   ShieldCheck, 
   CloudOff, 
   CloudLightning,
+  Cloud,
   LogOut,
   Sparkles,
   User as UserIcon,
@@ -205,6 +217,69 @@ export default function App() {
       if (unsubscribe) unsubscribe();
     };
   }, []);
+
+  // Real-time Firestore Cloud Database synchronization for authenticated user
+  useEffect(() => {
+    if (!user) return;
+
+    // Real-time listener for user links in Firestore
+    const unsubLinks = subscribeUserLinks(user.uid, (firestoreLinks) => {
+      if (firestoreLinks && firestoreLinks.length > 0) {
+        setLinks(firestoreLinks);
+        try {
+          localStorage.setItem('link_keeper_links', JSON.stringify(firestoreLinks));
+        } catch (e) {
+          console.error('Failed to update local cache from Firestore links:', e);
+        }
+      }
+    });
+
+    // Real-time listener for user credentials vault in Firestore
+    const unsubVault = subscribeUserVault(user.uid, (firestoreVault) => {
+      if (firestoreVault && firestoreVault.length > 0) {
+        setVaultItems(firestoreVault);
+        try {
+          localStorage.setItem('link_keeper_vault', JSON.stringify(firestoreVault));
+        } catch (e) {
+          console.error('Failed to update local cache from Firestore vault:', e);
+        }
+      }
+    });
+
+    return () => {
+      unsubLinks();
+      unsubVault();
+    };
+  }, [user]);
+
+  // Automated Schedule Check for Weekly/Monthly Auto Backup to Google Drive / Sheets
+  useEffect(() => {
+    if (!isOnline) return;
+    if (!settings.googleSyncEnabled || !settings.googleSpreadsheetId || !googleToken) return;
+    if (settings.autoBackupEnabled === false) return;
+
+    const freqDays = settings.autoBackupFrequency === 'monthly' ? 30 : 7;
+    const lastBackupMs = settings.lastAutoBackupDate ? new Date(settings.lastAutoBackupDate).getTime() : 0;
+    const nowMs = Date.now();
+    const elapsedDays = (nowMs - lastBackupMs) / (1000 * 60 * 60 * 24);
+
+    if (elapsedDays >= freqDays) {
+      console.log(`Auto-Backup Triggered: ${elapsedDays.toFixed(1)} days elapsed since last backup.`);
+      handleGoogleSheetsSync(googleToken, settings.googleSpreadsheetId, settings)
+        .then(() => {
+          const updatedSettings = {
+            ...settings,
+            lastAutoBackupDate: new Date().toISOString()
+          };
+          setSettings(updatedSettings);
+          saveSettings(updatedSettings);
+          showToast(`📅 สำรองข้อมูลลง Google Sheets อัตโนมัติ (${settings.autoBackupFrequency === 'monthly' ? 'รายเดือน' : 'รายสัปดาห์'}) เรียบร้อยแล้ว`, 'success');
+        })
+        .catch((err) => {
+          console.error('Auto Backup schedule failed:', err);
+        });
+    }
+  }, [isOnline, settings.googleSyncEnabled, settings.googleSpreadsheetId, googleToken, settings.autoBackupEnabled, settings.autoBackupFrequency]);
 
   // Load Settings and Local/Sheets data on start
   useEffect(() => {
@@ -424,12 +499,18 @@ export default function App() {
       const mergedVault = mergeArrays(localVault, remoteVault);
       addSyncLog(`Merged vault items: total ${mergedVault.length} items.`);
 
-      // 4. Update state & local storage cache
-      addSyncLog('Step 4: Writing merged records to in-app memory and local browser storage...');
+      // 4. Update state, local storage cache & Firestore
+      addSyncLog('Step 4: Writing merged records to in-app memory, local storage, and Cloud Firestore...');
       setLinks(mergedLinks);
       setVaultItems(mergedVault);
       localStorage.setItem('link_keeper_links', JSON.stringify(mergedLinks));
       localStorage.setItem('link_keeper_vault', JSON.stringify(mergedVault));
+
+      if (user) {
+        addSyncLog('Syncing merged records with Firebase Firestore Primary Database...');
+        await batchSaveLinksToFirestore(user.uid, mergedLinks).catch(e => console.error('Firestore batch links save error:', e));
+        await batchSaveVaultToFirestore(user.uid, mergedVault).catch(e => console.error('Firestore batch vault save error:', e));
+      }
 
       // 5. Write merged data back to Google Sheet
       addSyncLog('Step 5: Overwriting Google Sheets with unified dataset back-ups...');
@@ -555,10 +636,15 @@ export default function App() {
         return list;
       });
 
+      // Persist to Cloud Firestore if user is authenticated
+      if (user) {
+        saveLinkToFirestore(user.uid, saved).catch(e => console.error('Firestore save link failed:', e));
+      }
+
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
         if (!isOnline) {
           setSyncPending(true);
-          showToast('Offline: Changes saved locally. Synchronization queued.', 'info');
+          showToast('Offline: Changes saved locally & queued.', 'info');
         } else {
           try {
             await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
@@ -587,10 +673,15 @@ export default function App() {
         return list;
       });
 
+      // Delete from Cloud Firestore if user is authenticated
+      if (user) {
+        deleteLinkFromFirestore(user.uid, id).catch(e => console.error('Firestore delete link failed:', e));
+      }
+
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
         if (!isOnline) {
           setSyncPending(true);
-          showToast('Offline: Link deleted locally. Synchronization queued.', 'info');
+          showToast('Offline: Link deleted locally & queued.', 'info');
         } else {
           try {
             await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, nextLinks);
@@ -696,10 +787,15 @@ export default function App() {
         return list;
       });
 
+      // Persist to Cloud Firestore if authenticated
+      if (user) {
+        saveVaultToFirestore(user.uid, saved).catch(e => console.error('Firestore save vault failed:', e));
+      }
+
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
         if (!isOnline) {
           setSyncPending(true);
-          showToast('Offline: Vault changes saved locally. Synchronization queued.', 'info');
+          showToast('Offline: Vault changes saved locally & queued.', 'info');
         } else {
           try {
             await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
@@ -728,10 +824,15 @@ export default function App() {
         return list;
       });
 
+      // Delete from Cloud Firestore if authenticated
+      if (user) {
+        deleteVaultFromFirestore(user.uid, id).catch(e => console.error('Firestore delete vault failed:', e));
+      }
+
       if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken) {
         if (!isOnline) {
           setSyncPending(true);
-          showToast('Offline: Credential deleted locally. Synchronization queued.', 'info');
+          showToast('Offline: Credential deleted locally & queued.', 'info');
         } else {
           try {
             await saveVaultToSheet(googleToken, settings.googleSpreadsheetId, nextVault);
@@ -1083,31 +1184,49 @@ export default function App() {
               </button>
             )}
 
-            {/* Online/Offline Network Status Indicator */}
-            <div 
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold border transition-all ${
-                isOnline 
-                  ? 'bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-500/10' 
-                  : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 animate-pulse'
-              }`}
-              title={isOnline ? (syncPending ? 'Online. Unsynchronized changes are queued!' : 'Online') : 'Offline. Changes will be queued and synced when connection returns.'}
-            >
-              {isOnline ? (
-                <>
-                  <Wifi className="w-3.5 h-3.5 text-emerald-500" />
-                  <span className="hidden sm:inline">Online</span>
-                  {syncPending && (
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping"></span>
-                  )}
-                </>
-              ) : (
-                <>
-                  <WifiOff className="w-3.5 h-3.5 text-amber-500" />
-                  <span>Offline</span>
-                  {syncPending && (
-                    <span className="inline-flex items-center bg-amber-500/20 px-1 rounded text-[8px] ml-0.5">Queued</span>
-                  )}
-                </>
+            {/* Explicit Status Indicators: Internet Network + Google Sheets Status */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Internet Connectivity Status Badge */}
+              <div 
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-bold border transition-all ${
+                  isOnline 
+                    ? 'bg-emerald-500/5 text-emerald-600 dark:text-emerald-400 border-emerald-500/15' 
+                    : 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20 animate-pulse'
+                }`}
+                title={isOnline ? 'สถานะอินเทอร์เน็ต: เชื่อมต่อปกติ (Online)' : 'สถานะอินเทอร์เน็ต: ออฟไลน์ (Offline)'}
+              >
+                {isOnline ? (
+                  <>
+                    <Wifi className="w-3.5 h-3.5 text-emerald-500" />
+                    <span className="hidden sm:inline">Net: Online</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Net: Offline</span>
+                  </>
+                )}
+              </div>
+
+              {/* Google Sheets Hybrid Sync Status Badge */}
+              {settings.googleSyncEnabled && settings.googleSpreadsheetId && (
+                <div 
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-[10px] font-bold border transition-all ${
+                    googleSyncError || !googleToken
+                      ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30'
+                      : 'bg-blue-500/5 text-blue-600 dark:text-blue-400 border-blue-500/20'
+                  }`}
+                  title={
+                    googleSyncError || !googleToken
+                      ? 'Google Sheets: Access Token หมดอายุ กรุณากดปุ่ม Reconnect ด้านข้างเพื่อต่ออายุสิทธิ์'
+                      : 'Google Sheets Hybrid Sync: พร้อมใช้งานและซิงค์ข้อมูลลง Google Drive อัตโนมัติ'
+                  }
+                >
+                  <Cloud className="w-3.5 h-3.5" />
+                  <span className="hidden md:inline">
+                    {googleSyncError || !googleToken ? 'Sheets: Reconnect' : 'Sheets: Active'}
+                  </span>
+                </div>
               )}
             </div>
 

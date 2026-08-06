@@ -41,6 +41,9 @@ export interface AppSettings {
   masterPasswordHash?: string; // Optional client-side verification
   googleSyncEnabled?: boolean; // Whether direct Google Sheets sync via OAuth is enabled
   googleSpreadsheetId?: string; // Spreadsheet ID in Google Drive
+  autoBackupEnabled?: boolean; // Weekly/Monthly Auto Backup to Google Sheets
+  autoBackupFrequency?: 'weekly' | 'monthly'; // Frequency of auto-backup
+  lastAutoBackupDate?: string; // ISO date string of last backup
   autoLockEnabled?: boolean; // Whether vault auto-locks on inactivity
   autoLockTimeout?: number; // Timeout in minutes (e.g. 5, 15)
 }

@@ -26,6 +26,9 @@ import {
   FileText,
   LogOut,
   Cloud,
+  ShieldCheck,
+  Calendar,
+  Clock,
   ExternalLink,
   RefreshCw,
   Activity,
@@ -686,16 +689,24 @@ export default function SettingsPanel({
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
                 <Cloud className="w-4 h-4 text-emerald-600" />
-                Google Drive Direct Synchronization
+                Firebase Firestore & Google Drive Hybrid Synchronization
               </h3>
               <span className="text-[10px] bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 px-2 py-0.5 rounded-full font-bold uppercase tracking-wide">
-                Recommended
+                Hybrid Cloud Architecture
               </span>
             </div>
 
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 leading-relaxed">
-              Enable automated, seamless cloud sync using your own Google Drive. Sign in securely via Google to locate or automatically create your database spreadsheet.
-            </p>
+            {/* Hybrid Architecture Information Banner */}
+            <div className="p-3.5 bg-emerald-50/70 dark:bg-emerald-950/20 border border-emerald-200/60 dark:border-emerald-900/40 rounded-2xl space-y-2">
+              <div className="flex items-center gap-2 text-xs font-bold text-emerald-800 dark:text-emerald-300">
+                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Dual Persistence System: Firestore DB + Google Sheets Backup</span>
+              </div>
+              <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed">
+                • <strong>Firebase Firestore (Primary Database):</strong> บันทึกข้อมูลและซิงค์เรียลไทม์ข้ามอุปกรณ์ ล็อกอินค้างไว้ตลอดเวลา ไม่ติดปัญหา Token หมดอายุ<br />
+                • <strong>Google Sheets (Hybrid Backup):</strong> สำรองข้อมูลลง Spreadsheet ส่วนตัวของคุณบน Google Drive เพื่อเรียกดูหรือแก้ไขต่อได้ตลอดเวลา
+              </p>
+            </div>
 
             {!googleUser ? (
               <div className="space-y-4 w-full">
@@ -848,6 +859,86 @@ export default function SettingsPanel({
                     >
                       <RefreshCw className="w-3.5 h-3.5" /> {settings.googleSyncEnabled && settings.googleSpreadsheetId ? 'Sync Now' : 'Initialize & Link Sheet'}
                     </button>
+                  </div>
+                </div>
+
+                {/* Auto Backup Schedule to Google Drive / Sheets */}
+                <div className="border-t border-zinc-100 dark:border-zinc-800/60 pt-3.5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold flex items-center gap-1.5 text-[10px] uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
+                      <Calendar className="w-3.5 h-3.5 text-emerald-600" />
+                      Auto Backup Schedule to Google Drive / Sheets
+                    </span>
+                    <span className="text-[10px] text-zinc-400 font-medium">
+                      {settings.autoBackupEnabled !== false ? 'Weekly Active' : 'Disabled'}
+                    </span>
+                  </div>
+
+                  <div className="p-3.5 bg-zinc-50/70 dark:bg-zinc-900/30 border border-zinc-150 dark:border-zinc-800 rounded-xl space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-0.5">
+                        <label className="text-xs font-semibold text-zinc-800 dark:text-zinc-200">
+                          ตั้งเวลาสำรองข้อมูลอัตโนมัติ (Auto Backup)
+                        </label>
+                        <p className="text-[10px] text-zinc-500 dark:text-zinc-400">
+                          สำรองข้อมูลลิงก์และรหัสผ่านทั้งหมดลงบน Google Sheet อัตโนมัติเมื่อครบกำหนด
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.autoBackupEnabled !== false}
+                        onChange={(e) => {
+                          const updated = { ...settings, autoBackupEnabled: e.target.checked };
+                          onUpdateSettings(updated);
+                          onShowToast(
+                            e.target.checked 
+                              ? 'เปิดใช้งานการตั้งเวลาสำรองข้อมูลอัตโนมัติแล้ว' 
+                              : 'ปิดการตั้งเวลาสำรองข้อมูลอัตโนมัติแล้ว',
+                            'info'
+                          );
+                        }}
+                        className="w-4 h-4 text-emerald-600 rounded focus:ring-emerald-500 dark:bg-zinc-800 border-zinc-300 dark:border-zinc-700 cursor-pointer"
+                      />
+                    </div>
+
+                    {settings.autoBackupEnabled !== false && (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2 border-t border-zinc-150 dark:border-zinc-800/60 text-xs">
+                        <div>
+                          <label className="block text-[10px] uppercase font-bold text-zinc-500 dark:text-zinc-400 mb-1">
+                            ความถี่การสำรองข้อมูล (Frequency)
+                          </label>
+                          <select
+                            value={settings.autoBackupFrequency || 'weekly'}
+                            onChange={(e) => {
+                              const updated = { 
+                                ...settings, 
+                                autoBackupFrequency: e.target.value as 'weekly' | 'monthly' 
+                              };
+                              onUpdateSettings(updated);
+                              onShowToast(`ตั้งค่าความถี่สำรองข้อมูลเป็น: ${e.target.value === 'weekly' ? 'สัปดาห์ละครั้ง (Weekly)' : 'เดือนละครั้ง (Monthly)'}`, 'success');
+                            }}
+                            className="w-full px-2.5 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-xs text-zinc-800 dark:text-zinc-200 font-medium focus:ring-1 focus:ring-emerald-500"
+                          >
+                            <option value="weekly">สัปดาห์ละ 1 ครั้ง (Weekly - ทุก 7 วัน)</option>
+                            <option value="monthly">เดือนละ 1 ครั้ง (Monthly - ทุก 30 วัน)</option>
+                          </select>
+                        </div>
+
+                        <div>
+                          <label className="block text-[10px] uppercase font-bold text-zinc-500 dark:text-zinc-400 mb-1">
+                            สำรองข้อมูลล่าสุดเมื่อ (Last Auto-Backup)
+                          </label>
+                          <div className="flex items-center gap-1.5 text-xs text-zinc-700 dark:text-zinc-300 py-1.5 font-medium">
+                            <Clock className="w-3.5 h-3.5 text-zinc-400" />
+                            <span>
+                              {settings.lastAutoBackupDate 
+                                ? new Date(settings.lastAutoBackupDate).toLocaleString('th-TH')
+                                : 'ยังไม่ได้รันสำรองข้อมูล'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 

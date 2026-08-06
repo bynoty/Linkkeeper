@@ -1,0 +1,74 @@
+# Change Log - LinkKeeper Knowledge Base
+
+All notable changes to the **LinkKeeper Knowledge Base** project will be documented in this file.
+
+---
+
+## [2.1.0] - 2026-08-05 (Auto Weekly Backup & Explicit Status Badges)
+
+### 🚀 Added (ฟีเจอร์ใหม่)
+- **Auto Backup Schedule to Google Drive / Sheets**:
+  - ตั้งเวลาสำรองข้อมูลลง Google Sheets อัตโนมัติในเบื้องหลัง (ความถี่เริ่มต้น: สัปดาห์ละ 1 ครั้ง หรือเลือกปรับเป็นรายเดือนได้)
+  - ระบบตรวจสอบวันที่สำรองข้อมูลล่าสุด (`lastAutoBackupDate`) และรันการสำรองข้อมูลลง Google Sheet ส่วนตัวอัตโนมัติเมื่อผู้ใช้เข้าใช้งานแอปพลิเคชัน
+  - สามารถเปิด/ปิด ตั้งค่าความถี่ และดูวันเวลาสำรองข้อมูลล่าสุดได้จากหน้า **Settings -> Google Drive Direct Synchronization**
+
+### 🛠️ Changed (การปรับปรุง UI/UX)
+- **Explicit Status Indicators Separation**:
+  - ปรับปรุงป้ายสถานะบนแถบเมนูหลักส่วนบน (Top Header Navigation Bar) ให้แยกสถานะอย่างชัดเจน:
+    1. **`Net: Online / Offline`**: แสดงสถานะการเชื่อมต่ออินเทอร์เน็ตของเบราว์เซอร์
+    2. **`Sheets: Active / Reconnect`**: แสดงสถานะการเชื่อมต่อซิงค์ไฟล์กับ Google Drive / Google Sheets (และเตือนเมื่อ OAuth Access Token หมดอายุเพื่อให้กด Reconnect ได้ทันที)
+
+---
+
+## [2.0.0] - 2026-08-05 (Firebase Firestore & Hybrid Sync Update)
+
+### 🚀 Added (ฟีเจอร์ใหม่)
+- **Firebase Firestore Integration (Primary Database)**:
+  - เพิ่มระบบฐานข้อมูลคลาวด์เรียลไทม์ (Cloud Firestore) เป็นฐานข้อมูลหลักของแอปพลิเคชัน
+  - รองรับการเข้าสู่ระบบแบบค้างไว้ตลอดเวลา (Permanent Stay Signed In เหมือน Google Keep) ไม่ต้องล็อกอินใหม่ซ้ำซ้อน
+  - ซิงค์ข้อมูลเรียลไทม์ (Real-time Synchronization) อัตโนมัติทันทีที่เพิ่ม แก้ไข หรือลบลิงก์/รหัสผ่านข้ามอุปกรณ์
+  - เพิ่มระบบ IndexedDB Offline Persistence รองรับการใช้งานแม้ไม่มีอินเทอร์เน็ต
+- **Hybrid Cloud Architecture (Firestore + Google Sheets)**:
+  - ปรับสถาปัตยกรรมระบบเป็นแบบ Hybrid: ใช้ Firestore เป็นคลาวด์ DB หลักเพื่อความเร็วสูงสุด และใช้ Google Sheets เป็นระบบสำรองข้อมูลส่วนตัว (Hybrid Backup)
+  - เพิ่มป้ายสถานะและแบนเนอร์คำอธิบายเกี่ยวกับสถาปัตยกรรม Hybrid Cloud ในหน้า Settings
+- **Batch Real-time Sync**:
+  - เมื่อกดเชื่อมต่อ หรือรวมข้อมูล (Merge) ระบบจะบันทึกข้อมูลย้อนหลังกลับไปยัง Firestore และ Google Sheets โดยอัตโนมัติ
+
+### 🛠️ Changed (การปรับปรุง)
+- ปรับปรุง Flow การบันทึกและลบข้อมูลให้ประมวลผล Firestore ล่วงหน้าอย่างรวดเร็ว ก่อนที่จะส่งสำรองไปยัง Google Sheets API เบื้องหลัง
+
+---
+
+## [1.5.0] - 2026-08-05 (AI & Smart Tools Suite)
+
+### 🚀 Added (ฟีเจอร์ใหม่)
+- **AI-Powered Link Summarizer & Auto-Tagging**:
+  - ผสานรวม Gemini AI Model (`gemini-2.5-flash`) บน Express Server Endpoint (`/api/ai-summarize`)
+  - ฟังก์ชันสรุปเนื้อหาเว็บไซต์อัตโนมัติ 1-2 ประโยค คัดเลือกหมวดหมู่ และสร้างแท็กอัตโนมัติ
+  - เพิ่มระบบ Heuristic Fallback สำหรับวิเคราะห์คีย์เวิร์ดกรณีออฟไลน์หรือไม่มี API Key
+- **Quick Saver Tools (Bookmarklet & Web Extension)**:
+  - สร้าง Drag-and-Drop Bookmarklet สำหรับลากวางลงบนเบราว์เซอร์เพื่อบันทึกลิงก์ใน 1-Click
+  - เครื่องมือสร้างไฟล์ติดตั้ง Chrome/Edge Extension Generator (Manifest V3 + Popup)
+- **Browser Bookmarks Importer**:
+  - นำเข้าบุ๊กมาร์ก Netscape HTML (.html) จาก Chrome, Safari, Firefox, Edge และ JSON
+  - แปลงโครงสร้างโฟลเดอร์เป็นหมวดหมู่อัตโนมัติ พร้อมตรวจจับลิงก์ซ้ำด้วย Canonical URL Normalization
+- **Broken Link & Site Health Checker**:
+  - เพิ่ม Express Backend Server Proxy (`/api/check-link`) ตรวจสอบความสมบูรณ์ของเว็บไซต์
+  - Batch Scanner ตรวจสอบลิงก์ทั้งหมดในคลังพร้อมแสดง Progress สด และแสดงป้าย `Live (200)` / `Broken`
+- **Link Expiration & Reminder System**:
+  - ตั้งวันที่หมดอายุ/วันแจ้งเตือน (`ExpiresAt`) พร้อมป้ายกะพริบแจ้งเตือนและแบนเนอร์เตือนลิงก์ที่กำลังจะหมดอายุ
+
+---
+
+## [1.0.0] - 2026-08-04 (Initial Release)
+
+### 🚀 Added (ฟีเจอร์แรกเริ่ม)
+- **Core Link Keeper Engine**:
+  - จัดเก็บ ค้นหา กรองหมวดหมู่ แท็ก และติดดาว (Favorite/Pin) บุ๊กมาร์ก
+  - การ์ดแสดงผลสไตล์ทันสมัย รองรับ Light / Dark Mode
+- **Credentials Vault**:
+  - คลังเก็บชื่อผู้ใช้และรหัสผ่านส่วนตัวพร้อมระบบซ่อน/เปิดดูรหัสผ่าน และคัดลอกใน 1-Click
+- **Google Sheets Direct Persistence**:
+  - เชื่อมต่อและสร้างไฟล์ Google Sheet ใน Google Drive ส่วนตัวเพื่อบันทึกข้อมูล
+- **Local Storage Caching**:
+  - บันทึกข้อมูลลงเบราว์เซอร์เพื่อใช้งานแบบ Offline-First

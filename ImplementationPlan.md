@@ -8,16 +8,21 @@
 
 ## 2. Implemented Features & Technical Architecture (คุณสมบัติและสถาปัตยกรรมที่พัฒนาเสร็จสมบูรณ์)
 
-### 2.1 Google Drive / Sheets Persistent Synchronization & Smooth Token Renewal
-- **Smooth In-Place Top Header & Settings Reconnect**: เพิ่มปุ่ม `Reconnect` บนแถบเมนูหลักด้านบน (Top Navigation Header Bar) และในหน้า Settings/Error Banner ช่วยให้ผู้ใช้ต่ออายุ OAuth Access Token ที่หมดอายุ (อายุ 1 ชั่วโมง) ได้ทันทีใน 1-Click โดย **ไม่ต้อง Sign Out จากระบบหลัก** และ **ไม่ต้องสลับไปที่หน้า Settings**
-- **OAuth Prompt Parameter**: กำหนด `prompt: 'select_account'` ใน `GoogleAuthProvider` เพื่อให้สลับ/ยืนยันสิทธิ์ได้อย่างรวดเร็ว
-- **Automated Sync Retry & Offline Cache**: เมื่อได้รับ Token ใหม่สำเร็จ ระบบจะเรียกซิงค์ Google Sheets ต่อทันที และเก็บสำรองข้อมูลใน Local Browser Cache ป้องกันข้อมูลสูญหายเมื่อเครือข่ายหลุด
+### 2.1 Firebase Firestore & Google Drive Hybrid Cloud Architecture
+- **Firebase Firestore Primary Database**: สถาปัตยกรรมคลาวด์ดาต้าเบสเรียลไทม์ (Firestore) เป็นฐานข้อมูลหลักของแอปพลิเคชัน รองรับการล็อกอินค้างไว้ตลอดเวลา (Permanent Stay Signed In เหมือน Google Keep) ซิงค์ข้อมูลอัตโนมัติเรียลไทม์ข้ามอุปกรณ์และเบราว์เซอร์ พร้อมระบบ IndexedDb Offline Persistence
+- **Google Sheets Hybrid Backup**: ใช้ Google Drive / Google Sheets เป็นระบบสำรองข้อมูลเพิ่มเติม (Hybrid Backup & Export) ผู้ใช้สามารถกดซิงค์ข้อมูล หรือตั้งค่าให้ซิงค์ข้อมูลจาก Firestore ลงบน Google Sheet ส่วนตัวได้โดยตรง
+- **Automated Backup Schedule to Google Drive / Sheets**: เพิ่มระบบตั้งเวลาสำรองข้อมูลอัตโนมัติ (Default: สัปดาห์ละ 1 ครั้ง หรือปรับเป็นรายเดือน) โดยระบบจะตรวจสอบระยะเวลาและรันการสำรองข้อมูลลง Google Sheet ส่วนตัวให้อัตโนมัติเมื่อเข้าใช้งานแอปพลิเคชัน พร้อมแสดงวันเวลาที่สำรองข้อมูลล่าสุด (`Last Auto-Backup Date`)
+- **Explicit Network & Sheets Status Indicators**: ปรับปรุงสถานะบนเมนูส่วนบนให้แยกระหว่าง **สถานะอินเทอร์เน็ต (`Net: Online / Offline`)** และ **สถานะการซิงค์ Google Sheets (`Sheets: Active / Reconnect Needed`)** ชัดเจน ป้องกันความสับสน
+- **Smooth In-Place Top Header & Settings Reconnect**: ปุ่ม `Reconnect` บนแถบเมนูหลักด้านบน (Top Navigation Header Bar) และในหน้า Settings/Error Banner ช่วยให้ผู้ใช้ต่ออายุ OAuth Access Token ของ Google Sheets ที่หมดอายุ (อายุ 1 ชั่วโมง) ได้ทันทีใน 1-Click โดย **ไม่ต้อง Sign Out จากระบบหลัก** และไม่กระทบการทำงานของ Firestore DB หลัก
 - **Architecture Diagram**:
 ```
-[ Frontend (React + Vite) ] ──(401 Token Expired)──> [ Error Banner / Reconnect Button ]
-          │                                                       │
-          ▼                                                       ▼
-[ Local Browser Cache ] <──(Save Offline Backup)─── [ Google OAuth Popup (Prompt) ]
+[ User Action (Add/Edit/Delete) ]
+              │
+              ├───> [ Firebase Firestore DB (Primary Real-time Cloud DB) ] ──> Stay Signed In 24/7
+              │
+              ├───> [ Local Browser Cache (IndexedDB/localStorage) ] ──────> Offline First
+              │
+              └───> [ Google Sheets API (Hybrid Backup Destination) ] ─────> 1-Click Backup / Sync
 ```
 
 ---
