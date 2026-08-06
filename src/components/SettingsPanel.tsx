@@ -969,12 +969,18 @@ export default function SettingsPanel({
                       <p className="text-[10px] text-zinc-400 uppercase font-bold tracking-wider">Connection Status</p>
                       <div className="mt-1">
                         {googleSyncError ? (
-                          <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400">
-                            <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> Error Detected
-                          </span>
+                          googleSyncError.includes('token') || googleSyncError.includes('OAuth') || googleSyncError.includes('OAUTH_TOKEN_EXPIRED') || googleSyncError.includes('expired') ? (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-amber-600 dark:text-amber-400">
+                              <RefreshCw className="w-3.5 h-3.5 shrink-0 animate-spin-slow" /> Token Renewal Needed
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 text-xs font-semibold text-red-600 dark:text-red-400">
+                              <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> Error Detected
+                            </span>
+                          )
                         ) : lastGoogleSyncTime ? (
                           <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-600 dark:text-emerald-400">
-                            <Check className="w-3.5 h-3.5 shrink-0" /> Healthy
+                            <Check className="w-3.5 h-3.5 shrink-0" /> Healthy & Active
                           </span>
                         ) : (
                           <span className="text-xs text-zinc-400 italic">No sync attempted</span>
@@ -984,21 +990,43 @@ export default function SettingsPanel({
                   </div>
 
                   {googleSyncError && (
-                    <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider block">Google Sheets API Error Details</span>
-                        <button
-                          type="button"
-                          onClick={onGoogleSignIn}
-                          className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold rounded-lg shadow-xs transition-all flex items-center gap-1 cursor-pointer"
-                        >
-                          <RefreshCw className="w-3 h-3" /> Reconnect / Renew Token
-                        </button>
+                    googleSyncError.includes('token') || googleSyncError.includes('OAuth') || googleSyncError.includes('OAUTH_TOKEN_EXPIRED') || googleSyncError.includes('expired') ? (
+                      <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 uppercase tracking-wider flex items-center gap-1">
+                            <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                            Google Sheets OAuth Token Renewal Required
+                          </span>
+                          <button
+                            type="button"
+                            onClick={onGoogleSignIn}
+                            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-500 text-white text-[11px] font-bold rounded-lg shadow-xs transition-all flex items-center gap-1 cursor-pointer shrink-0"
+                          >
+                            <RefreshCw className="w-3 h-3" /> Reconnect / Renew Token
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-zinc-700 dark:text-zinc-300 leading-relaxed">
+                          • <strong>Firebase Firestore (ฐานข้อมูลหลัก):</strong> ทำงานและซิงค์เรียลไทม์ปกติ 24 ชม.<br />
+                          • <strong>Google Sheets Backup:</strong> Access Token สำหรับ Google Sheets API หมดอายุตามนโยบายความปลอดภัย 1 ชั่วโมงของ Google กรุณากดปุ่ม <strong>"Reconnect / Renew Token"</strong> เพื่อต่ออายุสิทธิ์ซิงค์ Google Drive
+                        </p>
                       </div>
-                      <p className="text-[11px] font-mono text-red-800 dark:text-red-300 break-all select-text leading-relaxed whitespace-pre-wrap">
-                        {googleSyncError}
-                      </p>
-                    </div>
+                    ) : (
+                      <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl space-y-2">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold text-red-600 dark:text-red-400 uppercase tracking-wider block">Google Sheets API Error Details</span>
+                          <button
+                            type="button"
+                            onClick={onGoogleSignIn}
+                            className="px-2.5 py-1 bg-red-600 hover:bg-red-500 text-white text-[11px] font-bold rounded-lg shadow-xs transition-all flex items-center gap-1 cursor-pointer"
+                          >
+                            <RefreshCw className="w-3 h-3" /> Reconnect / Renew Token
+                          </button>
+                        </div>
+                        <p className="text-[11px] font-mono text-red-800 dark:text-red-300 break-all select-text leading-relaxed whitespace-pre-wrap">
+                          {googleSyncError}
+                        </p>
+                      </div>
+                    )
                   )}
                 </div>
               </div>

@@ -461,8 +461,13 @@ export default function App() {
   const handleGoogleSheetsSync = async (token: string | null, spreadsheetId: string, currentSettings: AppSettings) => {
     if (!token) {
       console.warn('Google Sheets sync skipped: token is missing or expired.');
-      setGoogleSyncError('Google OAuth session token missing or expired. Please click "Reconnect Google" to re-authorize.');
-      showToast('Google token expired. Please click Reconnect Google to restore sync.', 'warning');
+      const tokenExpiredMsg = 'OAUTH_TOKEN_EXPIRED: Google Sheets OAuth token expired (1-hr security limit). Please click "Reconnect / Renew Token" to refresh Google Sheets sync.';
+      setGoogleSyncError(tokenExpiredMsg);
+      try {
+        localStorage.setItem('link_keeper_google_sync_error', tokenExpiredMsg);
+      } catch (e) {
+        console.error(e);
+      }
       return;
     }
     setIsLoading(true);
@@ -590,6 +595,12 @@ export default function App() {
       if (res) {
         setUser(res.user);
         setGoogleToken(res.accessToken);
+        setGoogleSyncError(null);
+        try {
+          localStorage.removeItem('link_keeper_google_sync_error');
+        } catch (e) {
+          console.error(e);
+        }
         showToast(`Successfully logged in as ${res.user.email}!`, 'success');
 
         // Automate spreadsheet connection if sync is already requested or enabled

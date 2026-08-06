@@ -13,7 +13,10 @@ All notable changes to the **LinkKeeper Knowledge Base** project will be documen
   - สามารถเปิด/ปิด ตั้งค่าความถี่ และดูวันเวลาสำรองข้อมูลล่าสุดได้จากหน้า **Settings -> Google Drive Direct Synchronization**
 
 ### 🛠️ Changed (การปรับปรุง UI/UX)
-- **Explicit Status Indicators Separation**:
+- **Explicit Status Indicators & Smart Token Renewal Handling**:
+  - **แยกสถานะการล็อกอินและ Access Token ชัดเจน**: ปรับปรุงหน้า Diagnostics ให้แยกแยะระหว่าง **"การเข้าสู่ระบบหลัก (Firebase Auth) ซึ่งยังคงทำงานปกติ 24/7"** กับ **"Google OAuth Access Token สำหรับ Google Sheets API ซึ่งหมดอายุตามนโยบายความปลอดภัย 1 ชั่วโมงของ Google"**
+  - เปลี่ยนการแสดงผลจากเดิมที่เป็นสีแดงเตือน "Error Detected" เมื่อ Token หมดอายุ เป็นสีส้ม **`⚡ Token Renewal Needed`** พร้อมแบนเนอร์คำอธิบายและปุ่ม **`[ ⚡ Reconnect / Renew Token ]`** เพื่อต่ออายุสิทธิ์ Google Sheets ได้ใน 1-Click
+  - ระบบล้างสถานะข้อผิดพลาดอัตโนมัติทันทีที่กด Reconnect หรือเข้าสู่ระบบสำเร็จ
   - ปรับปรุงป้ายสถานะบนแถบเมนูหลักส่วนบน (Top Header Navigation Bar) ให้แยกสถานะอย่างชัดเจน:
     1. **`Net: Online / Offline`**: แสดงสถานะการเชื่อมต่ออินเทอร์เน็ตของเบราว์เซอร์
     2. **`Sheets: Active / Reconnect`**: แสดงสถานะการเชื่อมต่อซิงค์ไฟล์กับ Google Drive / Google Sheets (และเตือนเมื่อ OAuth Access Token หมดอายุเพื่อให้กด Reconnect ได้ทันที)
