@@ -4,6 +4,18 @@ All notable changes to the **LinkKeeper Knowledge Base** project will be documen
 
 ---
 
+## [2.1.3] - 2026-08-06 (Public Web App Target URL & 403 Forbidden Resolution)
+
+### 🐛 Fixed (การแก้ไขข้อผิดพลาด)
+- **Resolved Google AI Studio 403 Forbidden Auth-Bridge Error**:
+  - **สาเหตุ:** เดิม Bookmarklet และ Chrome Extension อ้างอิง URL สภาพแวดล้อม Development Container (`ais-dev-*.asia-southeast1.run.app`) เมื่อเปิดจากแท็บหรือเบราว์เซอร์ภายนอก AI Studio Proxy จะสกัดกั้นและนำไปสู่หน้า `403 Forbidden (We're sorry, but you do not have access to this page)`.
+  - **การแก้ไข:**
+    1. ปรับระบบแปลง Target URL อัตโนมัติเป็น **Shared Public URL (`ais-pre-*.asia-southeast1.run.app`)** ซึ่งสามารถเข้าถึงได้จากภายนอกตลอดเวลาโดยไม่ติดสิทธิ์ 403
+    2. เพิ่มช่องปรับแต่ง **`Target LinkKeeper Web App URL`** ในหน้าต่าง Quick Saver Tools เพื่อให้ผู้ใช้เห็น และสามารถกรอก URL โดเมนของตนเองได้ตามต้องการ
+    3. เมื่อกด **➕ Save Webpage to LinkKeeper** จาก Extension หรือ Bookmarklet จะเปิดเข้าสู่หน้าหลักของ LinkKeeper ที่เป็น Public ได้ทันที 100%
+
+---
+
 ## [2.1.2] - 2026-08-06 (Chrome Extension MV3 Popup CSP Fix)
 
 ### 🐛 Fixed (การแก้ไขข้อผิดพลาด)

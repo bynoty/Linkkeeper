@@ -5,24 +5,37 @@ import { X, Bookmark, Download, Copy, Check, Sparkles, ExternalLink, ShieldCheck
 interface BookmarkletModalProps {
   isOpen: boolean;
   onClose: () => void;
-  appUrl: string;
+  appUrl?: string;
+  onShowToast?: (msg: string, type: 'success' | 'info' | 'warning' | 'error') => void;
 }
 
 export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
   isOpen,
   onClose,
   appUrl,
+  onShowToast,
 }) => {
   const [copied, setCopied] = useState(false);
   const [isGeneratingZip, setIsGeneratingZip] = useState(false);
   const [activeTab, setActiveTab] = useState<'bookmarklet' | 'extension'>('bookmarklet');
 
+  // Compute clean public URL (replace dev URL with shared pre URL to avoid 403 forbidden)
+  const defaultTargetUrl = React.useMemo(() => {
+    let base = appUrl || window.location.origin;
+    if (base.includes('ais-dev-')) {
+      base = base.replace('ais-dev-', 'ais-pre-');
+    }
+    return base.replace(/\/$/, '');
+  }, [appUrl]);
+
+  const [targetAppUrl, setTargetAppUrl] = useState(defaultTargetUrl);
+
   if (!isOpen) return null;
 
-  const currentOrigin = appUrl || window.location.origin;
+  const cleanTargetUrl = targetAppUrl.trim().replace(/\/$/, '') || defaultTargetUrl;
 
   // JavaScript Bookmarklet Code
-  const bookmarkletCode = `javascript:(function(){var url=encodeURIComponent(window.location.href);var title=encodeURIComponent(document.title);window.open('${currentOrigin}/?add_url='+url+'&add_title='+title,'_blank');})();`;
+  const bookmarkletCode = `javascript:(function(){var url=encodeURIComponent(window.location.href);var title=encodeURIComponent(document.title);window.open('${cleanTargetUrl}/?add_url='+url+'&add_title='+title,'_blank');})();`;
 
   const handleCopyCode = () => {
     navigator.clipboard.writeText(bookmarkletCode);
@@ -132,7 +145,7 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
           saveBtn.addEventListener('click', () => {
             const u = encodeURIComponent(pageUrl);
             const t = encodeURIComponent(pageTitle);
-            const targetUrl = '${currentOrigin}/?add_url=' + u + '&add_title=' + t;
+            const targetUrl = '${cleanTargetUrl}/?add_url=' + u + '&add_title=' + t;
             if (chrome.tabs && chrome.tabs.create) {
               chrome.tabs.create({ url: targetUrl });
             } else {
@@ -146,7 +159,7 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
     const saveBtn = document.getElementById('saveBtn');
     if (saveBtn) {
       saveBtn.addEventListener('click', () => {
-        window.open('${currentOrigin}', '_blank');
+        window.open('${cleanTargetUrl}', '_blank');
       });
     }
   }
@@ -200,8 +213,27 @@ export const BookmarkletModal: React.FC<BookmarkletModalProps> = ({
           </button>
         </div>
 
+        {/* Target App URL Field */}
+        <div className="mt-3.5 p-3 bg-zinc-50 dark:bg-zinc-800/60 border border-zinc-200 dark:border-zinc-800 rounded-xl space-y-1.5">
+          <div className="flex items-center justify-between text-[11px]">
+            <label className="font-bold text-zinc-700 dark:text-zinc-300 flex items-center gap-1.5">
+              <span>Target LinkKeeper Web App URL</span>
+            </label>
+            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-full">
+              Public URL (Fixes 403 Forbidden)
+            </span>
+          </div>
+          <input
+            type="text"
+            value={targetAppUrl}
+            onChange={(e) => setTargetAppUrl(e.target.value)}
+            placeholder="https://your-app-url.com"
+            className="w-full px-3 py-1.5 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 rounded-lg text-xs font-mono text-zinc-800 dark:text-zinc-200 focus:outline-hidden focus:border-emerald-500"
+          />
+        </div>
+
         {/* Tab Switcher */}
-        <div className="flex bg-zinc-100 dark:bg-zinc-800/60 p-1 rounded-xl my-4 text-xs font-semibold">
+        <div className="flex bg-zinc-100 dark:bg-zinc-800/60 p-1 rounded-xl my-3 text-xs font-semibold">
           <button
             type="button"
             onClick={() => setActiveTab('bookmarklet')}
