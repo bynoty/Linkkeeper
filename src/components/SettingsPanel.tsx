@@ -44,6 +44,7 @@ interface SettingsPanelProps {
   onImportBackup: (backupStr: string) => void;
   onImportBookmarks?: (htmlText: string) => Promise<void>;
   onImportVaultItems: (items: VaultItem[]) => Promise<void>;
+  onCleanupDuplicates?: () => void;
   onShowToast: (msg: string, type: 'success' | 'info' | 'warning' | 'error') => void;
   onSync: () => Promise<void>;
   googleUser?: User | null;
@@ -67,6 +68,7 @@ export default function SettingsPanel({
   onImportBackup,
   onImportBookmarks,
   onImportVaultItems,
+  onCleanupDuplicates,
   onShowToast,
   onSync,
   googleUser,
@@ -664,6 +666,27 @@ export default function SettingsPanel({
             </div>
           </div>
 
+          {/* Data Maintenance & Cleanup */}
+          <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200/70 dark:border-zinc-800 shadow-xs space-y-3">
+            <h3 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4 text-emerald-600" />
+              Data Maintenance
+            </h3>
+
+            <p className="text-[11px] text-zinc-500 dark:text-zinc-400 leading-normal">
+              Automatically identify and merge links with duplicate URLs, preserving the most recent metadata, tags, notes, and pins.
+            </p>
+
+            <button
+              type="button"
+              onClick={onCleanupDuplicates}
+              className="w-full py-2.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all shadow-xs text-center"
+            >
+              <Sparkles className="w-4 h-4 shrink-0" />
+              <span className="text-center">Cleanup Duplicates</span>
+            </button>
+          </div>
+
           {/* Cache Cleaning */}
           <div className="bg-white dark:bg-zinc-900 p-5 rounded-2xl border border-zinc-200/70 dark:border-zinc-800 shadow-xs space-y-3">
             <h3 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
@@ -1032,164 +1055,6 @@ export default function SettingsPanel({
               </div>
             )}
           </div>
-
-          {/* Legacy Apps Script connection card */}
-          <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200/70 dark:border-zinc-800 shadow-xs space-y-5">
-            <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold text-zinc-500 dark:text-zinc-400 uppercase tracking-wider flex items-center gap-1.5">
-                <Database className="w-4 h-4 text-emerald-600" />
-                Google Sheets Sync Configuration
-              </h3>
-              
-              <button
-                type="button"
-                onClick={() => setShowSetupGuide(!showSetupGuide)}
-                className="text-xs text-emerald-600 hover:text-emerald-500 dark:text-emerald-400 font-semibold flex items-center gap-1 cursor-pointer"
-              >
-                <BookOpen className="w-3.5 h-3.5" /> {showSetupGuide ? 'Hide Setup Guide' : 'How to Setup?'}
-              </button>
-            </div>
-
-            {/* Quick connection status banner */}
-            <div className={`p-4 rounded-2xl border text-xs leading-normal flex items-start gap-2.5 ${
-              settings.webAppUrl 
-                ? 'bg-emerald-500/5 border-emerald-500/20 text-emerald-800 dark:text-emerald-400' 
-                : 'bg-zinc-500/5 border-zinc-500/15 text-zinc-600 dark:text-zinc-400'
-            }`}>
-              <HelpCircle className="w-4.5 h-4.5 shrink-0 mt-0.5" />
-              <div>
-                <strong>Database State:</strong> {settings.webAppUrl ? (
-                  <>Connected to Google Sheets REST API. Data is actively synced and securely backed up to your spreadsheet.</>
-                ) : (
-                  <>Running in offline LocalStorage mode. Your saved bookmarks, notes, and encrypted passwords are stored safely in your browser container. Connect your custom spreadsheet below to enable cloud backup!</>
-                )}
-              </div>
-            </div>
-
-            {/* Config Form */}
-            <form onSubmit={handleSaveSyncSettings} className="space-y-4 text-left">
-              
-              {/* Web App URL */}
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400">
-                  Google Apps Script Web App URL
-                </label>
-                <input
-                  type="url"
-                  placeholder="https://script.google.com/macros/s/.../exec"
-                  value={webAppUrl}
-                  onChange={e => setWebAppUrl(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden dark:text-white"
-                />
-              </div>
-
-              {/* API Token (Optional) */}
-              <div className="space-y-1">
-                <label className="block text-xs font-semibold text-zinc-500 dark:text-zinc-400 flex items-center gap-1">
-                  API Token / Secret Key <span className="text-[10px] text-zinc-400 font-normal">(Optional)</span>
-                </label>
-                <input
-                  type="password"
-                  placeholder="e.g. matching your REQUIRE_API_TOKEN in Apps Script"
-                  value={apiToken}
-                  onChange={e => setApiToken(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-zinc-200 dark:border-zinc-800 bg-zinc-50/50 dark:bg-zinc-900/40 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 focus:outline-hidden dark:text-white"
-                />
-              </div>
-
-              {/* Toggle load sync */}
-              <div className="pt-1">
-                <label className="flex items-center gap-2 text-xs font-semibold text-zinc-600 dark:text-zinc-300 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={syncOnLoad}
-                    onChange={e => setSyncOnLoad(e.target.checked)}
-                    className="w-4 h-4 text-emerald-600 border-zinc-300 rounded-sm focus:ring-emerald-500 dark:bg-zinc-800/40 dark:border-zinc-700 cursor-pointer"
-                  />
-                  Automatically sync and fetch on page load
-                </label>
-              </div>
-
-              <button
-                type="submit"
-                disabled={isTestingSync}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl shadow-xs disabled:opacity-50 cursor-pointer flex items-center justify-center gap-1.5 transition-all"
-              >
-                {isTestingSync ? 'Saving & Syncing...' : 'Save & Test Connection'}
-              </button>
-
-            </form>
-          </div>
-
-          {/* Setup Guide instructions card (Toggleable) */}
-          {(showSetupGuide || !settings.webAppUrl) && (
-            <div className="bg-white dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200/70 dark:border-zinc-800 shadow-xs space-y-4 animate-in fade-in slide-in-from-top-4 duration-200">
-              <h4 className="font-semibold text-sm text-zinc-800 dark:text-white flex items-center gap-1.5">
-                <HelpCircle className="w-4.5 h-4.5 text-emerald-600" />
-                Step-by-Step Google Sheets Setup Guide
-              </h4>
-              
-              <div className="text-xs text-zinc-600 dark:text-zinc-400 space-y-3 leading-relaxed">
-                <ol className="list-decimal list-inside space-y-2.5">
-                  <li>
-                    Create a new Google Sheet on your Google Drive. Name it <strong>"Personal Link & Note Keeper"</strong>.
-                  </li>
-                  <li>
-                    In the spreadsheet menu, click <strong>Extensions &gt; Apps Script</strong>.
-                  </li>
-                  <li>
-                    In the left navigation bar, you can replicate the scripts found in your local project workspace under the <strong>`/backend`</strong> directory:
-                    <ul className="list-disc list-inside pl-5 mt-1 text-zinc-500 space-y-1 font-mono">
-                      <li>Code.gs</li>
-                      <li>LinkService.gs</li>
-                      <li>VaultService.gs</li>
-                      <li>Utils.gs</li>
-                      <li>Security.gs</li>
-                      <li>API.gs</li>
-                    </ul>
-                  </li>
-                  <li>
-                    Click the <strong>"Save"</strong> floppy disk icon in Apps Script.
-                  </li>
-                  <li>
-                    Click the <strong>Deploy</strong> blue button at the top right, then select <strong>New Deployment</strong>.
-                  </li>
-                  <li>
-                    Click the Gear icon next to "Select type", then select <strong>Web App</strong>.
-                    <ul className="list-disc list-inside pl-5 mt-1 text-zinc-500">
-                      <li>Set Description: "Keeper API v1"</li>
-                      <li>Set Execute as: <strong>"Me"</strong> (your email)</li>
-                      <li>Set Who has access: <strong>"Anyone"</strong></li>
-                    </ul>
-                  </li>
-                  <li>
-                    Click <strong>Deploy</strong>. Authorize the requested permissions on your Google Account (click Advanced &gt; Go to Untitled Script if Google asks).
-                  </li>
-                  <li>
-                    Copy the generated <strong>Web App URL</strong> (which ends in `/exec`), paste it in the form above, and click <strong>"Save & Test Connection"</strong>!
-                  </li>
-                </ol>
-              </div>
-
-              {/* Code preview block */}
-              <div className="space-y-1 pt-2">
-                <span className="block text-[11px] font-semibold text-zinc-500">Spreadsheet Backend Scripts:</span>
-                <div className="relative">
-                  <pre className="bg-zinc-50 dark:bg-zinc-900/60 border border-zinc-150 dark:border-zinc-800 p-3.5 rounded-xl text-[10px] font-mono text-zinc-500 dark:text-zinc-400 overflow-x-auto max-h-40">
-                    {appsScriptCodeExample}
-                  </pre>
-                  <button
-                    onClick={() => handleCopyText(appsScriptCodeExample)}
-                    className="absolute right-3 top-3 p-1.5 bg-white dark:bg-zinc-800 text-zinc-400 hover:text-zinc-600 rounded-lg border border-zinc-200 dark:border-zinc-700 cursor-pointer"
-                    title="Copy Snippet"
-                  >
-                    <Copy className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-            </div>
-          )}
 
         </div>
 

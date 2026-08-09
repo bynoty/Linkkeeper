@@ -1154,6 +1154,127 @@ export default function App() {
     }
   };
 
+  // Cleanup Duplicates handler
+  const handleCleanupDuplicates = async () => {
+    if (!links || links.length === 0) {
+      showToast('No links available to clean up.', 'info');
+      return;
+    }
+
+    const normalizeUrl = (url: string) => {
+      if (!url) return '';
+      let str = url.trim().toLowerCase();
+      str = str.replace(/^https?:\/\//, '');
+      str = str.replace(/^www\./, '');
+      str = str.replace(/\/+$/, '');
+      return str;
+    };
+
+    const groups: { [key: string]: LinkItem[] } = {};
+    for (const link of links) {
+      const key = normalizeUrl(link.Content);
+      if (!key) continue;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(link);
+    }
+
+    let removedCount = 0;
+    const cleanedLinks: LinkItem[] = [];
+    const idsToDeleteFromFirestore: string[] = [];
+
+    for (const key of Object.keys(groups)) {
+      const groupItems = groups[key];
+      if (groupItems.length === 1) {
+        cleanedLinks.push(groupItems[0]);
+      } else {
+        // Multiple items with the same URL -> Merge
+        removedCount += (groupItems.length - 1);
+
+        // Sort by UpdatedAt or CreatedAt descending (newest first)
+        groupItems.sort((a, b) => {
+          const timeA = new Date(a.UpdatedAt || a.CreatedAt || 0).getTime();
+          const timeB = new Date(b.UpdatedAt || b.CreatedAt || 0).getTime();
+          return timeB - timeA;
+        });
+
+        const newest = groupItems[0];
+        const duplicates = groupItems.slice(1);
+
+        duplicates.forEach(dup => idsToDeleteFromFirestore.push(dup.ID));
+
+        // Merge tags
+        const allTagsSet = new Set<string>();
+        groupItems.forEach(item => {
+          if (item.Tags) {
+            item.Tags.split(',').forEach(t => {
+              const trimmed = t.trim();
+              if (trimmed) allTagsSet.add(trimmed);
+            });
+          }
+        });
+
+        // Merge notes (unique non-empty notes)
+        const uniqueNotes = Array.from(new Set(
+          groupItems.map(i => i.Note?.trim()).filter(Boolean)
+        ));
+
+        // Best title
+        const bestTitle = groupItems.find(i => i.Title && i.Title.trim() !== '' && i.Title !== i.Content)?.Title || newest.Title;
+
+        // Best category (prefer specific category over General)
+        const bestCategory = groupItems.find(i => i.Category && i.Category !== 'General')?.Category || newest.Category;
+
+        // Favorite & Pinned
+        const isFavorite = groupItems.some(i => i.Favorite);
+        const isPinned = groupItems.some(i => i.Pinned);
+
+        // Earliest CreatedAt
+        const createdTimestamps = groupItems
+          .map(i => new Date(i.CreatedAt || Date.now()).getTime())
+          .filter(t => !isNaN(t));
+        const earliestCreatedAt = createdTimestamps.length > 0
+          ? new Date(Math.min(...createdTimestamps)).toISOString()
+          : newest.CreatedAt;
+
+        const mergedLink: LinkItem = {
+          ...newest,
+          Title: bestTitle,
+          Category: bestCategory,
+          Note: uniqueNotes.join(' | '),
+          Tags: Array.from(allTagsSet).join(', '),
+          Favorite: isFavorite,
+          Pinned: isPinned,
+          CreatedAt: earliestCreatedAt,
+          UpdatedAt: new Date().toISOString(),
+          AiSummary: newest.AiSummary || groupItems.find(i => i.AiSummary)?.AiSummary,
+        };
+
+        cleanedLinks.push(mergedLink);
+      }
+    }
+
+    if (removedCount === 0) {
+      showToast('No duplicate links found.', 'info');
+      return;
+    }
+
+    setLinks(cleanedLinks);
+    localStorage.setItem('link_keeper_links', JSON.stringify(cleanedLinks));
+
+    if (user) {
+      try {
+        for (const dupId of idsToDeleteFromFirestore) {
+          await deleteLinkFromFirestore(user.uid, dupId);
+        }
+        await batchSaveLinksToFirestore(user.uid, cleanedLinks);
+      } catch (e) {
+        console.error('Failed to sync duplicate cleanup to Firestore:', e);
+      }
+    }
+
+    showToast(`Cleanup complete! Merged metadata and removed ${removedCount} duplicate item(s).`, 'success');
+  };
+
   // Clear Local State Cache
   const handleClearLocalCache = () => {
     clearLocalCache();
@@ -1493,6 +1614,7 @@ export default function App() {
               onImportBackup={handleImportBackup}
               onImportBookmarks={handleImportBookmarks}
               onImportVaultItems={handleImportVaultItems}
+              onCleanupDuplicates={handleCleanupDuplicates}
               onShowToast={showToast}
               onSync={handleSync}
               googleUser={user}
