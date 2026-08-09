@@ -276,11 +276,19 @@ export default function App() {
     // Real-time listener for user links in Firestore
     const unsubLinks = subscribeUserLinks(user.uid, (firestoreLinks) => {
       if (firestoreLinks) {
-        setLinks(firestoreLinks);
+        const currentLocalStr = localStorage.getItem('link_keeper_links');
+        const currentLocal: LinkItem[] = currentLocalStr ? JSON.parse(currentLocalStr) : [];
+        const merged = mergeArrays(currentLocal, firestoreLinks);
+
+        setLinks(merged);
         try {
-          localStorage.setItem('link_keeper_links', JSON.stringify(firestoreLinks));
+          localStorage.setItem('link_keeper_links', JSON.stringify(merged));
         } catch (e) {
           console.error('Failed to update local cache from Firestore links:', e);
+        }
+
+        if (currentLocal.length > firestoreLinks.length) {
+          batchSaveLinksToFirestore(user.uid, merged).catch(e => console.error('Firestore merge back error:', e));
         }
       }
     });
@@ -288,11 +296,19 @@ export default function App() {
     // Real-time listener for user credentials vault in Firestore
     const unsubVault = subscribeUserVault(user.uid, (firestoreVault) => {
       if (firestoreVault) {
-        setVaultItems(firestoreVault);
+        const currentLocalStr = localStorage.getItem('link_keeper_vault');
+        const currentLocal: VaultItem[] = currentLocalStr ? JSON.parse(currentLocalStr) : [];
+        const merged = mergeArrays(currentLocal, firestoreVault);
+
+        setVaultItems(merged);
         try {
-          localStorage.setItem('link_keeper_vault', JSON.stringify(firestoreVault));
+          localStorage.setItem('link_keeper_vault', JSON.stringify(merged));
         } catch (e) {
           console.error('Failed to update local cache from Firestore vault:', e);
+        }
+
+        if (currentLocal.length > firestoreVault.length) {
+          batchSaveVaultToFirestore(user.uid, merged).catch(e => console.error('Firestore vault merge back error:', e));
         }
       }
     });

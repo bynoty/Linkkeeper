@@ -121,10 +121,12 @@ async function startServer() {
       }
 
       const statusCode = response ? response.status : 0;
-      const isOk = statusCode >= 200 && statusCode < 400;
+      // 2xx, 3xx, as well as 400/401/403/405/429/999 (which indicate active web server responding to bots) are reachable
+      const isOk = (statusCode >= 200 && statusCode < 404) || [400, 401, 403, 405, 429, 999].includes(statusCode);
 
       let statusText = response ? (response.statusText || (isOk ? 'OK' : `HTTP ${statusCode}`)) : 'Error';
-      if (statusCode === 403) statusText = 'Bot Protection / Access Restricted (403)';
+      if (statusCode === 403) statusText = 'Access Restricted / Bot Protection (403)';
+      if (statusCode === 400) statusText = 'Active (Server Responded 400)';
       if (statusCode === 401) statusText = 'Authentication Required (401)';
       if (statusCode === 404) statusText = 'Page Not Found (404)';
 
