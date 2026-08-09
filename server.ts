@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 async function startServer() {
   const app = express();
@@ -157,7 +157,7 @@ async function startServer() {
     const generateFallback = () => {
       let hostname = '';
       try {
-        if (url) hostname = new URL(url).hostname.replace('www.', '');
+        if (url) hostname = new URL(url.startsWith('http') ? url : `https://${url}`).hostname.replace('www.', '');
       } catch (e) {}
 
       let cat = 'Reference';
@@ -182,6 +182,7 @@ async function startServer() {
         summary: summaryText.trim(),
         suggestedCategory: cat,
         suggestedTags: tags.slice(0, 4),
+        isAiGenerated: false,
       };
     };
 
@@ -190,37 +191,93 @@ async function startServer() {
       return res.json(generateFallback());
     }
 
+    // Optionally extract page title & description meta tag if URL is provided
+    let pageMeta = '';
+    if (url) {
+      try {
+        let fullUrl = url.trim();
+        if (!fullUrl.startsWith('http://') && !fullUrl.startsWith('https://')) {
+          fullUrl = `https://${fullUrl}`;
+        }
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3500);
+        const pageRes = await fetch(fullUrl, {
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml',
+          },
+        });
+        clearTimeout(timeout);
+        if (pageRes.ok) {
+          const html = await pageRes.text();
+          const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+          const descMatch = html.match(/<meta[^>]*name=["']description["'][^>]*content=["']([^"']+)["']/i) ||
+                            html.match(/<meta[^>]*property=["']og:description["'][^>]*content=["']([^"']+)["']/i);
+          
+          if (titleMatch && titleMatch[1]) pageMeta += `Page Title: ${titleMatch[1].trim()}\n`;
+          if (descMatch && descMatch[1]) pageMeta += `Page Meta Description: ${descMatch[1].trim()}\n`;
+        }
+      } catch (e) {
+        // Fetch failed or timed out, continue with given URL/Title/Note
+      }
+    }
+
     try {
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = `Analyze this web link bookmark and return a JSON object with a concise 1-2 sentence Thai/English summary, a recommended category (choose one from: Work, Personal, Education, Reference, Finance, Social, Entertainment, Tool, AI), and 2-4 recommended short tags.
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build',
+          },
+        },
+      });
+
+      const prompt = `Analyze this web link bookmark and return a JSON object with a concise 1-2 sentence overview summary in Thai or English, a recommended category (choose one from: Work, Personal, Education, Reference, Finance, Social, Entertainment, Tool, AI), and 2-4 recommended short tags.
 
 Link URL: ${url || 'N/A'}
-Title: ${title || 'N/A'}
+User Title: ${title || 'N/A'}
 User Note: ${note || 'N/A'}
-
-Respond strictly with valid JSON only in this format:
-{
-  "summary": "Brief 1-2 sentence overview of what this link/site is about",
-  "suggestedCategory": "Category Name",
-  "suggestedTags": ["tag1", "tag2", "tag3"]
-}`;
+${pageMeta ? `Extracted Web Page Metadata:\n${pageMeta}` : ''}`;
 
       const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+        model: 'gemini-3.6-flash',
         contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              summary: {
+                type: Type.STRING,
+                description: "Concise 1-2 sentence summary of what this link/site is about",
+              },
+              suggestedCategory: {
+                type: Type.STRING,
+                description: "Recommended category from the allowed list",
+              },
+              suggestedTags: {
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
+                description: "2-4 recommended tags",
+              },
+            },
+            required: ["summary", "suggestedCategory", "suggestedTags"],
+          },
+        },
       });
 
       const responseText = response.text?.trim() || '';
-      const cleanJsonStr = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleanJsonStr);
+      const parsed = JSON.parse(responseText);
 
       return res.json({
         summary: parsed.summary || generateFallback().summary,
         suggestedCategory: parsed.suggestedCategory || 'Reference',
         suggestedTags: Array.isArray(parsed.suggestedTags) ? parsed.suggestedTags : [],
+        isAiGenerated: true,
       });
     } catch (err) {
-      console.warn('Gemini API summarization failed, returning heuristic fallback:', err);
+      console.warn('Gemini API summarization failed, returning fallback:', err);
       return res.json(generateFallback());
     }
   });

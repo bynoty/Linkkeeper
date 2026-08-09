@@ -514,22 +514,6 @@ export default function Dashboard({
             <Bookmark className="w-3.5 h-3.5" /> 1-Click Saver Tools
           </button>
         </div>
-
-        <button
-          type="button"
-          onClick={handleCheckAllHealth}
-          disabled={isCheckingHealth}
-          className="px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-700 dark:text-amber-300 border border-amber-500/20 text-xs font-semibold rounded-xl flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
-        >
-          {isCheckingHealth ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-          ) : (
-            <Activity className="w-3.5 h-3.5 text-amber-500" />
-          )}
-          {isCheckingHealth
-            ? `Checking site health (${healthProgress.current}/${healthProgress.total})...`
-            : 'Check Site Health'}
-        </button>
       </div>
 
       {/* Expiring / Expired Alert Banner if any */}
@@ -926,24 +910,6 @@ export default function Dashboard({
                                 <span className="inline-block text-[10px] font-semibold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-100/50 dark:bg-emerald-950/30 px-2 py-0.5 rounded-sm">
                                   {link.Category}
                                 </span>
-
-                                {/* Health Badge */}
-                                {link.HealthStatus && (
-                                  <span className={`inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-sm ${
-                                    link.HealthStatus === 'ok' 
-                                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20' 
-                                      : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
-                                  }`}>
-                                    <Activity className="w-2.5 h-2.5" />
-                                    {link.HealthStatus === 'ok' 
-                                      ? `Live (${link.StatusCode || 200})` 
-                                      : link.StatusCode === 403 || link.StatusCode === 401
-                                        ? `Protected (${link.StatusCode})`
-                                        : link.StatusCode
-                                          ? `Broken (${link.StatusCode})`
-                                          : 'Unreachable'}
-                                  </span>
-                                )}
 
                                 {/* Expiration Badge */}
                                 {link.ExpiresAt && (() => {
