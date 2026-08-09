@@ -73,58 +73,59 @@ async function startServer() {
     }
 
     try {
-      const target = new URL(url.startsWith('http') ? url : `https://${url}`);
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 8000);
+      let targetUrl = url.trim();
+      if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+        targetUrl = `https://${targetUrl}`;
+      }
+      const target = new URL(targetUrl);
 
       const browserHeaders = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+      };
+
+      const fetchWithTimeout = async (method: 'GET' | 'HEAD', timeoutMs = 8000) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const response = await fetch(target.toString(), {
+            method,
+            signal: controller.signal,
+            headers: browserHeaders,
+            redirect: 'follow',
+          });
+          clearTimeout(timeoutId);
+          return response;
+        } catch (err) {
+          clearTimeout(timeoutId);
+          throw err;
+        }
       };
 
       let response: Response | null = null;
       try {
-        // Try HEAD first
-        response = await fetch(target.toString(), {
-          method: 'HEAD',
-          signal: controller.signal,
-          headers: browserHeaders,
-        });
-
-        // If HEAD returns error status (404, 403, 405, etc.), retry with GET
-        if (response.status >= 400) {
-          response = await fetch(target.toString(), {
-            method: 'GET',
-            signal: controller.signal,
-            headers: browserHeaders,
-          });
-        }
-      } catch (err: any) {
-        // If HEAD failed with network/CORS error, try GET before giving up
+        response = await fetchWithTimeout('GET', 8000);
+      } catch (getErr: any) {
         try {
-          response = await fetch(target.toString(), {
-            method: 'GET',
-            signal: controller.signal,
-            headers: browserHeaders,
-          });
-        } catch (getErr: any) {
-          clearTimeout(timeoutId);
+          response = await fetchWithTimeout('HEAD', 5000);
+        } catch (headErr: any) {
           return res.json({
             ok: false,
             statusCode: 0,
-            statusText: getErr.name === 'AbortError' || err.name === 'AbortError' ? 'Timeout (8s)' : 'Network Error / Unreachable',
+            statusText: getErr.name === 'AbortError' || headErr.name === 'AbortError' ? 'Timeout (8s)' : 'Network Unreachable / Domain Offline',
             checkedAt: new Date().toISOString(),
           });
         }
       }
 
-      clearTimeout(timeoutId);
       const statusCode = response ? response.status : 0;
       const isOk = statusCode >= 200 && statusCode < 400;
 
       let statusText = response ? (response.statusText || (isOk ? 'OK' : `HTTP ${statusCode}`)) : 'Error';
       if (statusCode === 403) statusText = 'Bot Protection / Access Restricted (403)';
+      if (statusCode === 401) statusText = 'Authentication Required (401)';
       if (statusCode === 404) statusText = 'Page Not Found (404)';
 
       return res.json({

@@ -852,6 +852,34 @@ export default function App() {
     }
   };
 
+  const handleBatchUpdateLinks = async (updatedLinks: LinkItem[]) => {
+    setIsLoading(true);
+    try {
+      setLinks(updatedLinks);
+      try {
+        localStorage.setItem('link_keeper_links', JSON.stringify(updatedLinks));
+      } catch (e) {
+        console.error('LocalStorage write error:', e);
+      }
+
+      if (user) {
+        batchSaveLinksToFirestore(user.uid, updatedLinks).catch(e => console.error('Firestore batch links update failed:', e));
+      }
+
+      if (settings.googleSyncEnabled && settings.googleSpreadsheetId && googleToken && isOnline) {
+        try {
+          await saveLinksToSheet(googleToken, settings.googleSpreadsheetId, updatedLinks);
+        } catch (syncErr) {
+          handleGoogleError(syncErr, 'batch save links');
+        }
+      }
+    } catch (err) {
+      console.error('Batch update links failed:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Vault Crud Ops
   const handleSaveVault = async (item: Partial<VaultItem>, isNew: boolean) => {
     setIsLoading(true);
@@ -1404,6 +1432,7 @@ export default function App() {
               onDeleteLink={handleDeleteLink}
               onBulkDeleteLinks={handleBulkDeleteLinks}
               onBulkMoveLinks={handleBulkMoveLinks}
+              onBatchUpdateLinks={handleBatchUpdateLinks}
               onShowToast={showToast}
               searchTerm={searchTerm}
               isLoading={isLoading}

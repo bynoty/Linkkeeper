@@ -48,6 +48,7 @@ interface DashboardProps {
   onDeleteLink: (id: string) => Promise<void>;
   onBulkDeleteLinks: (ids: string[]) => Promise<void>;
   onBulkMoveLinks: (ids: string[], newCategory: string) => Promise<void>;
+  onBatchUpdateLinks?: (updatedLinks: LinkItem[]) => Promise<void>;
   onShowToast: (msg: string, type: 'success' | 'info' | 'warning' | 'error') => void;
   searchTerm: string;
   isLoading: boolean;
@@ -61,6 +62,7 @@ export default function Dashboard({
   onDeleteLink,
   onBulkDeleteLinks,
   onBulkMoveLinks,
+  onBatchUpdateLinks,
   onShowToast,
   searchTerm,
   isLoading,
@@ -99,19 +101,32 @@ export default function Dashboard({
     setIsCheckingHealth(true);
     setHealthProgress({ current: 0, total: urlsToCheck.length });
 
+    const updatedLinks = [...links];
     let count = 0;
+
     for (let i = 0; i < urlsToCheck.length; i++) {
       const link = urlsToCheck[i];
       setHealthProgress({ current: i + 1, total: urlsToCheck.length });
       const res = await checkLinkHealth(getFullUrl(link.Content));
       
-      await onSaveLink({
-        ...link,
-        HealthStatus: res.ok ? 'ok' : 'broken',
-        StatusCode: res.statusCode,
-        LastCheckedAt: res.checkedAt,
-      }, false);
+      const idx = updatedLinks.findIndex(l => l.ID === link.ID);
+      if (idx !== -1) {
+        updatedLinks[idx] = {
+          ...updatedLinks[idx],
+          HealthStatus: res.ok ? 'ok' : 'broken',
+          StatusCode: res.statusCode,
+          LastCheckedAt: res.checkedAt,
+        };
+      }
       count++;
+    }
+
+    if (onBatchUpdateLinks) {
+      await onBatchUpdateLinks(updatedLinks);
+    } else {
+      for (const updated of updatedLinks) {
+        await onSaveLink(updated, false);
+      }
     }
 
     setIsCheckingHealth(false);
