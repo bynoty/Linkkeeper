@@ -163,25 +163,24 @@ async function initializeHeaders(token: string, spreadsheetId: string): Promise<
   const linksHeaders = [['ID', 'Title', 'Content', 'Category', 'Tags', 'Note', 'Favorite', 'Pinned', 'CreatedAt', 'UpdatedAt']];
   const vaultHeaders = [['ID', 'Service', 'Username', 'Password', 'Note', 'Favorite', 'CreatedAt', 'UpdatedAt']];
 
-  // Links headers
-  await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A1:J1?valueInputOption=USER_ENTERED`, {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ values: linksHeaders }),
-  });
-
-  // Vault headers
-  await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A1:H1?valueInputOption=USER_ENTERED`, {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${token}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({ values: vaultHeaders }),
-  });
+  await Promise.all([
+    googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A1:J1?valueInputOption=USER_ENTERED`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: linksHeaders }),
+    }),
+    googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A1:H1?valueInputOption=USER_ENTERED`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ values: vaultHeaders }),
+    })
+  ]);
 }
 
 /**

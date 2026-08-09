@@ -19,7 +19,8 @@ import {
   saveVaultToFirestore,
   deleteVaultFromFirestore,
   batchSaveVaultToFirestore,
-  saveSettingsToFirestore
+  saveSettingsToFirestore,
+  getSettingsFromFirestore
 } from './lib/firestoreService';
 import { 
   findSpreadsheet, 
@@ -219,16 +220,43 @@ export default function App() {
         setUser(firebaseUser);
         setGoogleToken(token);
         
-        // If Google Sheets Sync is enabled and we have a spreadsheet ID, trigger an automatic sync
-        const currentSettings = loadSettings();
-        if (currentSettings.googleSyncEnabled && currentSettings.googleSpreadsheetId) {
-          setTimeout(async () => {
-            try {
-              await handleGoogleSheetsSync(token, currentSettings.googleSpreadsheetId!, currentSettings);
-            } catch (e) {
-              console.error('Auto-sync on load failed:', e);
-            }
-          }, 200);
+        // Sync cloud settings and initial local cache with Cloud Firestore
+        try {
+          const cloudSettings = await getSettingsFromFirestore(firebaseUser.uid);
+          let activeSettings = loadSettings();
+          if (cloudSettings) {
+            activeSettings = { ...activeSettings, ...cloudSettings };
+            setSettings(activeSettings);
+            saveSettings(activeSettings);
+          } else {
+            saveSettingsToFirestore(firebaseUser.uid, activeSettings).catch(e => console.error('Firestore save settings failed:', e));
+          }
+
+          // Initial upload of local cache to Firestore if local cache exists
+          const localDataLinks = localStorage.getItem('link_keeper_links');
+          const localLinks: LinkItem[] = localDataLinks ? JSON.parse(localDataLinks) : [];
+          if (localLinks.length > 0) {
+            batchSaveLinksToFirestore(firebaseUser.uid, localLinks).catch(e => console.error('Initial links sync error:', e));
+          }
+
+          const localDataVault = localStorage.getItem('link_keeper_vault');
+          const localVault: VaultItem[] = localDataVault ? JSON.parse(localDataVault) : [];
+          if (localVault.length > 0) {
+            batchSaveVaultToFirestore(firebaseUser.uid, localVault).catch(e => console.error('Initial vault sync error:', e));
+          }
+
+          // Trigger automatic Google Sheets sync if enabled
+          if (activeSettings.googleSyncEnabled && activeSettings.googleSpreadsheetId) {
+            setTimeout(async () => {
+              try {
+                await handleGoogleSheetsSync(token, activeSettings.googleSpreadsheetId!, activeSettings);
+              } catch (e) {
+                console.error('Auto-sync on load failed:', e);
+              }
+            }, 200);
+          }
+        } catch (e) {
+          console.error('Cloud setup on auth init failed:', e);
         }
       },
       () => {
@@ -247,7 +275,7 @@ export default function App() {
 
     // Real-time listener for user links in Firestore
     const unsubLinks = subscribeUserLinks(user.uid, (firestoreLinks) => {
-      if (firestoreLinks && firestoreLinks.length > 0) {
+      if (firestoreLinks) {
         setLinks(firestoreLinks);
         try {
           localStorage.setItem('link_keeper_links', JSON.stringify(firestoreLinks));
@@ -259,7 +287,7 @@ export default function App() {
 
     // Real-time listener for user credentials vault in Firestore
     const unsubVault = subscribeUserVault(user.uid, (firestoreVault) => {
-      if (firestoreVault && firestoreVault.length > 0) {
+      if (firestoreVault) {
         setVaultItems(firestoreVault);
         try {
           localStorage.setItem('link_keeper_vault', JSON.stringify(firestoreVault));
@@ -423,6 +451,9 @@ export default function App() {
   const handleUpdateSettings = (newSettings: AppSettings) => {
     setSettings(newSettings);
     saveSettings(newSettings);
+    if (user) {
+      saveSettingsToFirestore(user.uid, newSettings).catch(e => console.error('Firestore save settings error:', e));
+    }
     // Apply theme immediately if modified
     applyTheme(newSettings.theme);
   };
@@ -499,15 +530,14 @@ export default function App() {
     try {
       showToast('Syncing with Google Drive...', 'info');
 
-      // 1. Fetch remote data
+      // 1. Fetch remote data in parallel
       addSyncLog(`Step 1: Requesting remote records from spreadsheet ID: "${spreadsheetId}"...`);
-      addSyncLog('Fetching remote links...');
-      const remoteLinks = await fetchLinksFromSheet(token, spreadsheetId);
-      addSyncLog(`Fetched ${remoteLinks.length} links from Google Sheet successfully.`);
-
-      addSyncLog('Fetching remote vault credentials...');
-      const remoteVault = await fetchVaultFromSheet(token, spreadsheetId);
-      addSyncLog(`Fetched ${remoteVault.length} vault credentials from Google Sheet successfully.`);
+      addSyncLog('Fetching remote links and vault credentials in parallel...');
+      const [remoteLinks, remoteVault] = await Promise.all([
+        fetchLinksFromSheet(token, spreadsheetId),
+        fetchVaultFromSheet(token, spreadsheetId)
+      ]);
+      addSyncLog(`Fetched ${remoteLinks.length} links and ${remoteVault.length} vault items from Google Sheet successfully.`);
 
       // 2. Load current local cache
       addSyncLog('Step 2: Retrieving local storage cache from your browser...');
@@ -540,15 +570,14 @@ export default function App() {
         await batchSaveVaultToFirestore(user.uid, mergedVault).catch(e => console.error('Firestore batch vault save error:', e));
       }
 
-      // 5. Write merged data back to Google Sheet
-      addSyncLog('Step 5: Overwriting Google Sheets with unified dataset back-ups...');
-      addSyncLog(`Uploading ${mergedLinks.length} links to 'Links' tab...`);
-      await saveLinksToSheet(token, spreadsheetId, mergedLinks);
-      addSyncLog("Links backup completed successfully.");
-
-      addSyncLog(`Uploading ${mergedVault.length} credentials to 'Vault' tab...`);
-      await saveVaultToSheet(token, spreadsheetId, mergedVault);
-      addSyncLog("Vault backup completed successfully.");
+      // 5. Write merged data back to Google Sheet in parallel
+      addSyncLog('Step 5: Overwriting Google Sheets with unified dataset back-ups in parallel...');
+      addSyncLog(`Uploading ${mergedLinks.length} links & ${mergedVault.length} vault items in parallel...`);
+      await Promise.all([
+        saveLinksToSheet(token, spreadsheetId, mergedLinks),
+        saveVaultToSheet(token, spreadsheetId, mergedVault)
+      ]);
+      addSyncLog("Links and Vault backups completed successfully.");
 
       addSyncLog('Step 6: Sync complete. All records synchronized!');
       
@@ -599,6 +628,9 @@ export default function App() {
       };
       setSettings(updatedSettings);
       saveSettings(updatedSettings);
+      if (user) {
+        saveSettingsToFirestore(user.uid, updatedSettings).catch(e => console.error('Firestore save settings error:', e));
+      }
 
       // Trigger sync
       await handleGoogleSheetsSync(activeToken, spreadsheetId, updatedSettings);
