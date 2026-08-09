@@ -824,7 +824,7 @@ export default function Dashboard({
           )}
 
           {/* Skeletons/Loading state */}
-          {isLoading ? (
+          {isLoading && links.length === 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {[1, 2, 3, 4].map(idx => (
                 <div key={idx} className="bg-white/50 dark:bg-zinc-900/30 p-5 rounded-2xl border border-zinc-200/40 dark:border-zinc-800/40 animate-pulse space-y-3">
