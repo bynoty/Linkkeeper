@@ -609,16 +609,16 @@ export default function App() {
     setIsLoading(true);
     try {
       showToast('Connecting to Google Drive...', 'info');
-      let spreadsheetId = await findSpreadsheet(activeToken);
+      let spreadsheetId = settings.googleSpreadsheetId;
+      
+      if (!spreadsheetId) {
+        spreadsheetId = await findSpreadsheet(activeToken);
+      }
 
       if (!spreadsheetId) {
         showToast('Creating new Google Sheet for LinkKeeper...', 'info');
         spreadsheetId = await createSpreadsheet(activeToken);
         showToast('Google Sheet created successfully!', 'success');
-      } else {
-        showToast('Found existing LinkKeeper spreadsheet. Initializing structures...', 'info');
-        await initializeSpreadsheetStructure(activeToken, spreadsheetId);
-        showToast('Google Sheet loaded successfully!', 'success');
       }
 
       const updatedSettings = {
