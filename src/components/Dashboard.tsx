@@ -920,7 +920,13 @@ export default function Dashboard({
                                       : 'bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20'
                                   }`}>
                                     <Activity className="w-2.5 h-2.5" />
-                                    {link.HealthStatus === 'ok' ? `Live (${link.StatusCode || 200})` : `Broken (${link.StatusCode || 404})`}
+                                    {link.HealthStatus === 'ok' 
+                                      ? `Live (${link.StatusCode || 200})` 
+                                      : link.StatusCode === 403 || link.StatusCode === 401
+                                        ? `Protected (${link.StatusCode})`
+                                        : link.StatusCode
+                                          ? `Broken (${link.StatusCode})`
+                                          : 'Unreachable'}
                                   </span>
                                 )}
 

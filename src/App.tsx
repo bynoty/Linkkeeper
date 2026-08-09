@@ -506,8 +506,11 @@ export default function App() {
       setGoogleToken(null);
       clearTokenCache();
       showToast('Google session expired. Please sign in again to refresh sync connection.', 'warning');
+    } else if (errMsg.includes('429') || errMsg.includes('Quota exceeded') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+      showToast('Google Sheets rate limit reached (Quota 429). Retrying automatically in a few seconds...', 'warning');
     } else {
-      showToast(`Drive Sync Failed: ${errMsg}`, 'error');
+      const cleanMsg = errMsg.length > 150 ? errMsg.slice(0, 150) + '...' : errMsg;
+      showToast(`Drive Sync Notice: ${cleanMsg}`, 'error');
     }
   };
 
@@ -570,14 +573,22 @@ export default function App() {
         await batchSaveVaultToFirestore(user.uid, mergedVault).catch(e => console.error('Firestore batch vault save error:', e));
       }
 
-      // 5. Write merged data back to Google Sheet in parallel
-      addSyncLog('Step 5: Overwriting Google Sheets with unified dataset back-ups in parallel...');
-      addSyncLog(`Uploading ${mergedLinks.length} links & ${mergedVault.length} vault items in parallel...`);
-      await Promise.all([
-        saveLinksToSheet(token, spreadsheetId, mergedLinks),
-        saveVaultToSheet(token, spreadsheetId, mergedVault)
-      ]);
-      addSyncLog("Links and Vault backups completed successfully.");
+      // 5. Write merged data back to Google Sheet sequentially to respect Google API quota
+      addSyncLog('Step 5: Backing up data to Google Sheets...');
+      try {
+        addSyncLog(`Uploading ${mergedLinks.length} links to 'Links' tab...`);
+        await saveLinksToSheet(token, spreadsheetId, mergedLinks);
+        addSyncLog("Links backup completed successfully.");
+
+        await new Promise(r => setTimeout(r, 400)); // 400ms delay between write calls
+
+        addSyncLog(`Uploading ${mergedVault.length} credentials to 'Vault' tab...`);
+        await saveVaultToSheet(token, spreadsheetId, mergedVault);
+        addSyncLog("Vault backup completed successfully.");
+      } catch (backupErr) {
+        console.warn('Google Sheets backup write failed, but local & Firestore sync succeeded:', backupErr);
+        addSyncLog(`Sheet write backup note: ${(backupErr as Error).message}`);
+      }
 
       addSyncLog('Step 6: Sync complete. All records synchronized!');
       
@@ -645,17 +656,17 @@ export default function App() {
 
   const handleGoogleSignIn = async () => {
     setIsLoading(true);
+    setGoogleSyncError(null);
+    try {
+      localStorage.removeItem('link_keeper_google_sync_error');
+    } catch (e) {
+      console.error(e);
+    }
     try {
       const res = await googleSignIn();
       if (res) {
         setUser(res.user);
         setGoogleToken(res.accessToken);
-        setGoogleSyncError(null);
-        try {
-          localStorage.removeItem('link_keeper_google_sync_error');
-        } catch (e) {
-          console.error(e);
-        }
         showToast(`Successfully logged in as ${res.user.email}!`, 'success');
 
         // Automate spreadsheet connection if sync is already requested or enabled

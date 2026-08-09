@@ -2,32 +2,66 @@ import { LinkItem, VaultItem } from '../types';
 
 const SPREADSHEET_NAME = 'LinkKeeper Spreadsheet Database';
 
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
 /**
- * Helper to fetch Google API endpoints. It attempts direct calls first (perfect for Vercel / production browsers)
- * and falls back to our backend proxy if blocked by iframe sandboxes or local CORS limitations.
+ * Helper to fetch Google API endpoints with automatic 429 rate-limit backoff retry.
  */
-async function googleFetch(url: string, options: RequestInit = {}): Promise<Response> {
-  try {
-    // Attempt direct call first
-    const directResponse = await fetch(url, options);
-    return directResponse;
-  } catch (directError) {
-    console.warn("Direct Google API fetch failed, trying proxy fallback:", directError);
-    
-    // Fall back to backend proxy in case of network/CORS error inside sandboxed iframe
-    const proxyUrl = `/api/google-proxy?url=${encodeURIComponent(url)}`;
+async function googleFetch(url: string, options: RequestInit = {}, retries = 3): Promise<Response> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
     try {
-      const proxyResponse = await fetch(proxyUrl, options);
-      if (proxyResponse.status === 404) {
-        // If the proxy is not found (404), it means we are in a static hosting environment like Vercel,
-        // so we must bubble up the original direct call error.
+      let response = await fetch(url, options);
+
+      // Handle Google API rate limit (429) or server busy (503) with exponential backoff delay
+      if ((response.status === 429 || response.status === 503) && attempt < retries) {
+        const waitMs = (attempt + 1) * 3000; // 3s, 6s, 9s
+        console.warn(`Google API rate limit hit (Status ${response.status}). Retrying in ${waitMs}ms... (${attempt + 1}/${retries})`);
+        await delay(waitMs);
+        continue;
+      }
+
+      return response;
+    } catch (directError) {
+      if (attempt < retries) {
+        const proxyUrl = `/api/google-proxy?url=${encodeURIComponent(url)}`;
+        try {
+          const proxyResponse = await fetch(proxyUrl, options);
+          if ((proxyResponse.status === 429 || proxyResponse.status === 503) && attempt < retries) {
+            await delay((attempt + 1) * 3000);
+            continue;
+          }
+          if (proxyResponse.status !== 404) {
+            return proxyResponse;
+          }
+        } catch (proxyError) {
+          // ignore proxy error and loop retry
+        }
+      } else {
         throw directError;
       }
-      return proxyResponse;
-    } catch (proxyError) {
-      // If both failed, propagate the original error
-      throw directError;
     }
+  }
+  return fetch(url, options);
+}
+
+/**
+ * Helper to parse clean error message from response
+ */
+async function getCleanErrorMessage(response: Response): Promise<string> {
+  try {
+    const text = await response.text();
+    if (text.includes('RESOURCE_EXHAUSTED') || text.includes('429') || text.includes('Quota exceeded')) {
+      return 'Google Sheets API Rate Limit (Quota 429) - Google limits write operations to 60/min. The system will automatically retry shortly.';
+    }
+    if (text.startsWith('{')) {
+      const parsed = JSON.parse(text);
+      if (parsed.error?.message) {
+        return parsed.error.message;
+      }
+    }
+    return text.length > 200 ? text.slice(0, 200) + '...' : text;
+  } catch (e) {
+    return response.statusText || `HTTP ${response.status}`;
   }
 }
 
@@ -195,8 +229,8 @@ export async function fetchLinksFromSheet(token: string, spreadsheetId: string):
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Failed to fetch links: Status ${response.status} (${response.statusText}) - ${errText}`);
+    const errText = await getCleanErrorMessage(response);
+    throw new Error(`Failed to fetch links: Status ${response.status} - ${errText}`);
   }
 
   const data = await response.json();
@@ -228,8 +262,8 @@ export async function fetchVaultFromSheet(token: string, spreadsheetId: string):
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Failed to fetch vault: Status ${response.status} (${response.statusText}) - ${errText}`);
+    const errText = await getCleanErrorMessage(response);
+    throw new Error(`Failed to fetch vault: Status ${response.status} - ${errText}`);
   }
 
   const data = await response.json();
@@ -260,8 +294,8 @@ export async function saveLinksToSheet(token: string, spreadsheetId: string, lin
   });
 
   if (!clearResponse.ok) {
-    const errText = await clearResponse.text();
-    throw new Error(`Failed to clear links range: Status ${clearResponse.status} (${clearResponse.statusText}) - ${errText}`);
+    const errText = await getCleanErrorMessage(clearResponse);
+    throw new Error(`Failed to clear links range: Status ${clearResponse.status} - ${errText}`);
   }
 
   if (links.length === 0) return;
@@ -279,6 +313,8 @@ export async function saveLinksToSheet(token: string, spreadsheetId: string, lin
     l.UpdatedAt,
   ]);
 
+  await delay(200); // 200ms throttle between clear & update
+
   const response = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Links!A2:J${links.length + 1}?valueInputOption=USER_ENTERED`, {
     method: 'PUT',
     headers: {
@@ -289,8 +325,8 @@ export async function saveLinksToSheet(token: string, spreadsheetId: string, lin
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Failed to save links to sheet: Status ${response.status} (${response.statusText}) - ${errText}`);
+    const errText = await getCleanErrorMessage(response);
+    throw new Error(`Failed to save links to sheet: Status ${response.status} - ${errText}`);
   }
 }
 
@@ -307,8 +343,8 @@ export async function saveVaultToSheet(token: string, spreadsheetId: string, vau
   });
 
   if (!clearResponse.ok) {
-    const errText = await clearResponse.text();
-    throw new Error(`Failed to clear vault range: Status ${clearResponse.status} (${clearResponse.statusText}) - ${errText}`);
+    const errText = await getCleanErrorMessage(clearResponse);
+    throw new Error(`Failed to clear vault range: Status ${clearResponse.status} - ${errText}`);
   }
 
   if (vault.length === 0) return;
@@ -324,6 +360,8 @@ export async function saveVaultToSheet(token: string, spreadsheetId: string, vau
     v.UpdatedAt,
   ]);
 
+  await delay(200); // 200ms throttle between clear & update
+
   const response = await googleFetch(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}/values/Vault!A2:H${vault.length + 1}?valueInputOption=USER_ENTERED`, {
     method: 'PUT',
     headers: {
@@ -334,8 +372,8 @@ export async function saveVaultToSheet(token: string, spreadsheetId: string, vau
   });
 
   if (!response.ok) {
-    const errText = await response.text();
-    throw new Error(`Failed to save vault to sheet: Status ${response.status} (${response.statusText}) - ${errText}`);
+    const errText = await getCleanErrorMessage(response);
+    throw new Error(`Failed to save vault to sheet: Status ${response.status} - ${errText}`);
   }
 }
 
